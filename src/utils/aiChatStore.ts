@@ -82,6 +82,22 @@ export async function syncChatMessageToServer(message: SyncedChatMessage): Promi
   }
 }
 
+export async function removeChatMessage(id: string): Promise<void> {
+  const current = getLocalChatHistory();
+  const filtered = current.filter((msg) => msg.id !== id);
+  saveLocalChatHistory(filtered);
+  try {
+    await fetch(`/api/ai/conversation/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: filtered }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (e) {
+    console.warn('Could not sync deleted message to backend server:', e);
+  }
+}
+
 export async function clearSyncedChatHistory(): Promise<void> {
   saveLocalChatHistory([]);
   try {

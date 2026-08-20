@@ -1,8 +1,8 @@
 import { CurrentWeather, HourlyForecastItem, LocationInfo, PressureTrend, SolunarData, TideData } from '../types';
 
 export const POPULAR_FISHING_LOCATIONS: LocationInfo[] = [
-  { name: 'Fishtrap Lake (Pikeville)', region: 'Pikeville, KY, USA', lat: 37.42, lon: -82.42 },
-  { name: 'Pikeville (Dewey & Fishtrap)', region: 'Kentucky, USA', lat: 37.48, lon: -82.52 },
+  { name: 'Fishtrap Lake', region: 'Pikeville, KY, USA', lat: 37.4253, lon: -82.4182 },
+  { name: 'Pikeville (Levisa Fork & Dewey)', region: 'Pikeville, KY, USA', lat: 37.48, lon: -82.52 },
   { name: 'Lake Okeechobee', region: 'Florida, USA', lat: 26.96, lon: -80.83 },
   { name: 'Lake Guntersville', region: 'Alabama, USA', lat: 34.36, lon: -86.29 },
   { name: 'Lake Erie (Western Basin)', region: 'Ohio / Michigan, USA', lat: 41.65, lon: -82.80 },

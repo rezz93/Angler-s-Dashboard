@@ -8,10 +8,10 @@ import { BiteScoreCard } from './components/BiteScoreCard';
 import { HourlyForecast } from './components/HourlyForecast';
 import { EnvironmentalPanel } from './components/EnvironmentalPanel';
 import { SpeciesGuide } from './components/SpeciesGuide';
-import { TackleGuide } from './components/TackleGuide';
 import { CatchLogView } from './components/CatchLogView';
 import { CatchLogModal } from './components/CatchLogModal';
 import { AndroidQRModal } from './components/AndroidQRModal';
+import { AndroidQRView } from './components/AndroidQRView';
 import { AIAssistant } from './components/AIAssistant';
 import { AIOverviewBriefing } from './components/AIOverviewBriefing';
 import { calculateSolunar } from './utils/solunar';
@@ -87,6 +87,21 @@ const INITIAL_SAMPLE_CATCHES: CatchRecord[] = [
 ];
 
 export default function App() {
+  const [savedLocations, setSavedLocations] = useState<LocationInfo[]>(() => {
+    const saved = localStorage.getItem('anglers_daily_saved_locations');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return POPULAR_FISHING_LOCATIONS;
+  });
+
   const [currentLocation, setCurrentLocation] = useState<LocationInfo>(() => {
     const saved = localStorage.getItem('angler_saved_location');
     if (saved) {
@@ -99,9 +114,64 @@ export default function App() {
     return POPULAR_FISHING_LOCATIONS[0];
   });
 
+  useEffect(() => {
+    localStorage.setItem('anglers_daily_saved_locations', JSON.stringify(savedLocations));
+  }, [savedLocations]);
+
+  const handleAddLocation = (newLoc: LocationInfo) => {
+    setSavedLocations((prev) => {
+      const exists = prev.some(
+        (l) =>
+          l.name.toLowerCase() === newLoc.name.toLowerCase() ||
+          (Math.abs(l.lat - newLoc.lat) < 0.001 && Math.abs(l.lon - newLoc.lon) < 0.001)
+      );
+      if (exists) {
+        return prev.map((l) =>
+          l.name.toLowerCase() === newLoc.name.toLowerCase() ? newLoc : l
+        );
+      }
+      return [newLoc, ...prev];
+    });
+    setCurrentLocation(newLoc);
+  };
+
+  const handleRemoveLocation = (locToRemove: LocationInfo) => {
+    setSavedLocations((prev) => {
+      const updated = prev.filter(
+        (l) =>
+          !(
+            l.name === locToRemove.name &&
+            Math.abs(l.lat - locToRemove.lat) < 0.001 &&
+            Math.abs(l.lon - locToRemove.lon) < 0.001
+          )
+      );
+
+      // If removed active location, switch to first available
+      if (
+        locToRemove.name === currentLocation.name &&
+        Math.abs(locToRemove.lat - currentLocation.lat) < 0.001
+      ) {
+        if (updated.length > 0) {
+          setCurrentLocation(updated[0]);
+        } else {
+          const fallback = POPULAR_FISHING_LOCATIONS[0];
+          setCurrentLocation(fallback);
+          return [fallback];
+        }
+      }
+
+      return updated.length > 0 ? updated : [POPULAR_FISHING_LOCATIONS[0]];
+    });
+  };
+
+  const handleResetLocations = () => {
+    setSavedLocations(POPULAR_FISHING_LOCATIONS);
+    setCurrentLocation(POPULAR_FISHING_LOCATIONS[0]);
+  };
+
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'conditions' | 'fishtrap' | 'species' | 'tackle' | 'catchlog' | 'ai'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'conditions' | 'fishtrap' | 'species' | 'catchlog' | 'ai' | 'android'>('dashboard');
 
   const [catches, setCatches] = useState<CatchRecord[]>(() => {
     const saved = localStorage.getItem('anglers_daily_catch_log');
@@ -138,9 +208,8 @@ export default function App() {
       else if (e.key === '2') setActiveTab('conditions');
       else if (e.key === '3') setActiveTab('fishtrap');
       else if (e.key === '4') setActiveTab('species');
-      else if (e.key === '5') setActiveTab('tackle');
-      else if (e.key === '6') setActiveTab('catchlog');
-      else if (e.key === '7') setActiveTab('ai');
+      else if (e.key === '5') setActiveTab('catchlog');
+      else if (e.key === '6' || e.key === '7') setActiveTab('ai');
       else if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         setPrefillCatchSpecies('');
@@ -281,6 +350,10 @@ export default function App() {
       <Header
         currentLocation={currentLocation}
         onSelectLocation={setCurrentLocation}
+        savedLocations={savedLocations}
+        onAddLocation={handleAddLocation}
+        onRemoveLocation={handleRemoveLocation}
+        onResetLocations={handleResetLocations}
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
         unitSystem={unitSystem}
@@ -331,7 +404,7 @@ export default function App() {
             {/* 1. DASHBOARD VIEW (Pikeville & Fishtrap Overview Start Page) */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
-                {/* 1A. AI Pro Angler Advisor Intelligence Briefing at the TOP */}
+                {/* 1A. AI Angler Guide Intelligence Briefing at the TOP */}
                 <AIOverviewBriefing
                   location={currentLocation}
                   weather={currentWeather}
@@ -473,7 +546,7 @@ export default function App() {
                   </div>
 
                   <SpeciesGuide
-                    speciesList={computedSpecies.slice(0, 3)}
+                    speciesList={computedSpecies}
                     onLogCatchForSpecies={handleOpenCatchModalForSpecies}
                   />
                 </div>
@@ -536,16 +609,7 @@ export default function App() {
               />
             )}
 
-            {/* 5. TACKLE BOX & RIGGING TAB */}
-            {activeTab === 'tackle' && (
-              <TackleGuide
-                weather={currentWeather}
-                solunar={solunarData}
-                unitSystem={unitSystem}
-              />
-            )}
-
-            {/* 6. CATCH LOG JOURNAL TAB */}
+            {/* 5. CATCH LOG JOURNAL TAB */}
             {activeTab === 'catchlog' && (
               <CatchLogView
                 catches={catches}
@@ -560,7 +624,7 @@ export default function App() {
               />
             )}
 
-            {/* 7. AI PRO ANGLER ADVISOR TAB */}
+            {/* 7. AI ANGLER GUIDE TAB */}
             {activeTab === 'ai' && (
               <AIAssistant
                 currentLocation={currentLocation}
@@ -569,6 +633,11 @@ export default function App() {
                 unitSystem={unitSystem}
                 hydrology={hydrologyData}
               />
+            )}
+
+            {/* 8. DEDICATED ANDROID & MOBILE QR HUB TAB */}
+            {activeTab === 'android' && (
+              <AndroidQRView />
             )}
           </>
         )}

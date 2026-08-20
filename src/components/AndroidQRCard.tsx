@@ -35,11 +35,11 @@ export const AndroidQRCard: React.FC<AndroidQRCardProps> = ({ onOpenFullView, on
     setTargetUrl(url);
 
     QRCode.toDataURL(url, {
-      width: 240,
-      margin: 2,
+      width: 320,
+      margin: 3,
       color: {
-        dark: '#042f2e',
-        light: '#f0fdf4',
+        dark: '#000000',
+        light: '#ffffff',
       },
       errorCorrectionLevel: 'H',
     })
@@ -70,7 +70,7 @@ export const AndroidQRCard: React.FC<AndroidQRCardProps> = ({ onOpenFullView, on
   return (
     <div
       id="android-qr-dashboard-banner"
-      className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-900 border-2 border-emerald-500/50 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden"
+      className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden"
     >
       <div className="flex flex-col md:flex-row items-center gap-6 justify-between">
         {/* Left Info */}
@@ -78,23 +78,23 @@ export const AndroidQRCard: React.FC<AndroidQRCardProps> = ({ onOpenFullView, on
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-black tracking-wide uppercase">
               <Smartphone className="w-3.5 h-3.5" />
-              <span>Android QR</span>
+              <span>Mobile Quick Access</span>
             </div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-xs font-bold tracking-wide">
-              <Laptop className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Chrome PC Desktop PWA</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold tracking-wide">
+              <Laptop className="w-3.5 h-3.5" />
+              <span>Desktop & PWA</span>
             </div>
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-100 leading-tight">
-            Launch on Android Phone & Google Chrome PC
+          <h2 className="text-xl sm:text-2xl font-black text-slate-100 leading-tight">
+            Scan QR Code for Mobile Access
           </h2>
 
           <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-            Scan with your Android camera or install directly to Google Chrome on PC for dedicated standalone windows, full telemetry on the water, and offline access.
+            Point your smartphone camera or Google Lens directly at the QR code to open Angler's Daily Dashboard live on your mobile device for on-the-water telemetry and solunar feeding peaks.
           </p>
 
-          {/* Quick Buttons */}
+          {/* Action Buttons */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1">
             {isInstallable && !isInstalled && (
               <button
@@ -103,7 +103,7 @@ export const AndroidQRCard: React.FC<AndroidQRCardProps> = ({ onOpenFullView, on
                 className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md shadow-emerald-950/50"
               >
                 <PlusCircle className="w-4 h-4" />
-                <span>Install to Chrome PC</span>
+                <span>Install App</span>
               </button>
             )}
 
@@ -123,41 +123,43 @@ export const AndroidQRCard: React.FC<AndroidQRCardProps> = ({ onOpenFullView, on
               className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <ExternalLink className="w-4 h-4 text-emerald-400" />
-              <span>Open in Chrome Tab</span>
+              <span>Open in New Tab</span>
             </a>
 
-            {onOpenFullView && (
+            {onOpenModal && (
               <button
                 id="qr-banner-expand-btn"
-                onClick={onOpenFullView}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/50"
+                onClick={() => onOpenModal('android')}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md"
               >
-                <span>Mobile & PC Hub</span>
-                <ChevronRight className="w-4 h-4" />
+                <QrCode className="w-4 h-4" />
+                <span>Full-Screen QR</span>
               </button>
             )}
           </div>
         </div>
 
         {/* Right QR Display */}
-        <div className="shrink-0 flex flex-col items-center gap-2 bg-slate-950/90 p-4 rounded-2xl border border-emerald-500/40 shadow-xl">
-          <div className="p-2.5 bg-emerald-50 rounded-xl shadow-inner border border-emerald-200">
+        <div className="shrink-0 flex flex-col items-center gap-2 bg-slate-950 p-4 rounded-3xl border border-emerald-500/40 shadow-2xl">
+          <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-slate-200">
             {qrDataUrl ? (
               <img
                 src={qrDataUrl}
-                alt="QR Code for Android & Chrome"
-                className="w-36 h-36 sm:w-40 sm:h-40 rounded-lg object-contain"
+                alt="Angler's Daily Dashboard QR Code"
+                className="w-40 h-40 sm:w-44 sm:h-44 object-contain block rounded"
               />
             ) : (
-              <div className="w-36 h-36 flex items-center justify-center text-xs text-slate-400">
+              <div className="w-40 h-40 flex items-center justify-center text-xs text-slate-600">
                 Generating QR...
               </div>
             )}
           </div>
-          <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-            <QrCode className="w-3.5 h-3.5" />
-            Scan with Android Camera
-          </span>
+          <div className="text-center">
+            <span className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
+              <QrCode className="w-3.5 h-3.5" />
+              Scan with Phone Camera
+            </span>
+          </div>
         </div>
       </div>
     </div>

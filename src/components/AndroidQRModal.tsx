@@ -43,7 +43,6 @@ export const AndroidQRModal: React.FC<AndroidQRModalProps> = ({
   }, [initialTab, isOpen]);
 
   useEffect(() => {
-    // Pick the best clean URL
     const url =
       typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('http')
         ? window.location.origin
@@ -51,11 +50,11 @@ export const AndroidQRModal: React.FC<AndroidQRModalProps> = ({
     setCurrentUrl(url);
 
     QRCode.toDataURL(url, {
-      width: 320,
-      margin: 2,
+      width: 380,
+      margin: 3,
       color: {
-        dark: '#022c22', // deep emerald
-        light: '#f0fdf4', // mint glow
+        dark: '#000000',
+        light: '#ffffff',
       },
       errorCorrectionLevel: 'H',
     })

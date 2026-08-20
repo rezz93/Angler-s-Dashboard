@@ -31,20 +31,20 @@ export const AndroidQRView: React.FC = () => {
   const [customInputUrl, setCustomInputUrl] = useState<string>(defaultUrl);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
-  const [colorTheme, setColorTheme] = useState<'emerald' | 'dark' | 'amber'>('emerald');
+  const [colorTheme, setColorTheme] = useState<'dark' | 'emerald' | 'amber'>('dark');
 
   const { isInstallable, isInstalled, triggerInstall } = usePWAInstall();
 
   const themeColors = {
+    dark: { dark: '#000000', light: '#ffffff' },
     emerald: { dark: '#022c22', light: '#ecfdf5' },
-    dark: { dark: '#020617', light: '#ffffff' },
     amber: { dark: '#451a03', light: '#fffbeb' },
   };
 
   useEffect(() => {
     QRCode.toDataURL(targetUrl, {
-      width: 380,
-      margin: 2,
+      width: 420,
+      margin: 3,
       color: themeColors[colorTheme],
       errorCorrectionLevel: 'H',
     })
@@ -360,23 +360,23 @@ export const AndroidQRView: React.FC = () => {
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">1</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">
-                  <span className="text-slate-300">Species Radar</span>
+                  <span className="text-slate-300">Conditions Radar</span>
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">2</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">
-                  <span className="text-slate-300">Tackle Guide</span>
+                  <span className="text-slate-300">Fishtrap Lake Hub</span>
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">3</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">
-                  <span className="text-slate-300">Catch Journal</span>
+                  <span className="text-slate-300">Species Radar</span>
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">4</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">
-                  <span className="text-slate-300">AI Pro Advisor</span>
+                  <span className="text-slate-300">Catch Journal</span>
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">5</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">
-                  <span className="text-slate-300">Device Hub</span>
+                  <span className="text-slate-300">AI Angler Guide</span>
                   <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono font-bold text-[11px]">6</kbd>
                 </div>
                 <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-xs">

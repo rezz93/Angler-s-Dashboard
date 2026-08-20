@@ -1,14 +1,10 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -76,12 +72,24 @@ app.delete('/api/ai/conversation', (req, res) => {
   res.json({ success: true, messages: [] });
 });
 
+// Delete a single message from synced conversation
+app.delete('/api/ai/conversation/:id', (req, res) => {
+  const { id } = req.params;
+  const { messages } = req.body;
+  if (Array.isArray(messages)) {
+    syncedConversations = messages;
+  } else {
+    syncedConversations = syncedConversations.filter((m) => m.id !== id);
+  }
+  res.json({ success: true, messages: syncedConversations });
+});
+
 // AI Fishing Advice Endpoint
 app.post('/api/gemini/advice', async (req, res) => {
   try {
     const { prompt, conditions } = req.body;
 
-    if (!prompt) {
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
@@ -91,16 +99,19 @@ app.post('/api/gemini/advice', async (req, res) => {
       const systemInstruction = `You are a legendary Master Angler, tournament fishing guide, and fisheries biologist with deep expertise in Pikeville, Kentucky and Fishtrap Lake (USACE reservoir on the Levisa Fork).
 Target species for this lake include: Largemouth Bass, Smallmouth Bass, Crappie (Black & White), Panfish (Bluegill/Sunfish), Catfish (Channel, Flathead, Blue), and Freshwater Striped Bass / Hybrid Stripers.
 You provide direct, precise, actionable answers to the angler's exact question based on official USACE Huntington District real-time water temperature (79.4°F), pool elevation, barometer trend, wind, and solunar feeding windows.
+Always include explicit statements about:
+1. Expected Weather Conditions: How current and forecasted weather (barometer, wind, sky condition, temperature) affect fish behavior and positioning today.
+2. Solunar Best Times for the Day: Exact peak feeding windows (Major and Minor solunar periods, dawn/dusk transitions) and how the angler should schedule their key presentations during these times.
 Format your response with clear headings, bullet points, specific lure setups, exact depths, colors, and retrieve cadences.
 Directly answer whatever the user asked without repeating generic template summaries.`;
 
       const contextData = conditions
-        ? `\n\nCURRENT FISHTRAP LAKE & PIKEVILLE CONDITIONS:\n- Location: ${conditions.location || 'Fishtrap Lake, Pikeville KY'}\n- Official USACE Lake Water Temp: ${conditions.waterTemp || '79.4°F'}\n- Barometric Pressure: ${conditions.pressure || '1013 hPa'} (${conditions.pressureTrend || 'Steady'})\n- Air Temperature: ${conditions.airTemp || '75°F'}\n- Inflow/Outflow: ${conditions.inflowOutflow || '135 cfs in / 181 cfs out'}\n- Wind: ${conditions.windSpeed || '8 mph'} from ${conditions.windDirection || 'SW'}\n- Solunar Rating: ${conditions.solunarScore || '75'}/100\n- Moon Phase: ${conditions.moonPhase || 'Waxing'}\n- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`
+        ? `\n\nCURRENT FISHTRAP LAKE & PIKEVILLE CONDITIONS & EXPECTED WEATHER:\n- Location: ${conditions.location || 'Fishtrap Lake, Pikeville KY'}\n- Official USACE Lake Water Temp: ${conditions.waterTemp || '79.4°F'}\n- Expected Weather: ${conditions.weather || 'Partly Cloudy'}, Air Temp: ${conditions.airTemp || '75°F'}\n- Barometric Pressure: ${conditions.pressure || '1013 hPa'} (${conditions.pressureTrend || 'Steady'})\n- Wind: ${conditions.windSpeed || '8 mph'} from ${conditions.windDirection || 'SW'}\n- Solunar Best Times for Today: ${conditions.solunarBestTimes || 'Major 1: Dawn, Major 2: Dusk'}\n- Solunar Score: ${conditions.solunarScore || '75'}/100 (${conditions.solunarQuality || 'Good'})\n- Moon Phase: ${conditions.moonPhase || 'Waxing'}\n- Inflow/Outflow: ${conditions.inflowOutflow || '135 cfs in / 181 cfs out'}\n- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`
         : '';
 
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const aiPromise = ai.models.generateContent({
+          model: 'gemini-3.7-flash',
           contents: `${prompt}${contextData}`,
           config: {
             systemInstruction,
@@ -108,11 +119,17 @@ Directly answer whatever the user asked without repeating generic template summa
           },
         });
 
-        if (response.text && response.text.trim().length > 0) {
-          return res.json({ advice: response.text, source: 'gemini' });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI generation timed out after 6 seconds')), 6000)
+        );
+
+        const response = await Promise.race([aiPromise, timeoutPromise]);
+
+        if (response && response.text && response.text.trim().length > 0) {
+          return res.json({ advice: response.text.trim(), source: 'gemini' });
         }
       } catch (geminiErr: any) {
-        console.warn('Gemini API call failed, falling back to local pro engine:', geminiErr?.message);
+        console.warn('Gemini API call warning, falling back to local pro engine:', geminiErr?.message);
       }
     }
 

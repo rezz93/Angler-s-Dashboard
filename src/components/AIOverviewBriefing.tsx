@@ -22,6 +22,7 @@ import {
   getLocalChatHistory,
   fetchServerChatHistory,
   syncChatMessageToServer,
+  removeChatMessage,
   clearSyncedChatHistory,
   subscribeToChatUpdates,
   saveLocalChatHistory,
@@ -47,7 +48,7 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
   const [quickQuestion, setQuickQuestion] = useState('');
   const [qaHistory, setQaHistory] = useState<SyncedChatMessage[]>(() => getLocalChatHistory());
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const qaContainerRef = useRef<HTMLDivElement | null>(null);
 
   const actualWaterTemp = hydrology.waterTempF || 79.4;
   const waterTempDisplay = `${actualWaterTemp.toFixed(1)}°F`;
@@ -66,6 +67,15 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
 
     return () => unsubscribe();
   }, []);
+
+  const scrollToQaBottom = () => {
+    if (qaContainerRef.current) {
+      qaContainerRef.current.scrollTo({
+        top: qaContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   const handleAskQuickQuestion = async (queryText?: string) => {
     const text = (queryText || quickQuestion).trim();
@@ -87,6 +97,17 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
     saveLocalChatHistory(nextList);
     setQuickQuestion('');
     setIsSubmitting(true);
+    setTimeout(scrollToQaBottom, 50);
+
+    const majorTimesSummary = solunar.majorPeriods && solunar.majorPeriods.length > 0
+      ? solunar.majorPeriods.map((p, idx) => `Major ${idx + 1}: ${p.start}–${p.end} (Peak ${p.peak})`).join(' | ')
+      : 'Major 1: 06:30 AM–08:30 AM | Major 2: 06:45 PM–08:45 PM';
+
+    const minorTimesSummary = solunar.minorPeriods && solunar.minorPeriods.length > 0
+      ? solunar.minorPeriods.map((p, idx) => `Minor ${idx + 1}: ${p.start}–${p.end} (Peak ${p.peak})`).join(' | ')
+      : 'Minor 1: 12:30 PM–01:30 PM | Minor 2: 12:45 AM–01:45 AM';
+
+    const bestTimesCombined = `${majorTimesSummary}; ${minorTimesSummary}`;
 
     try {
       const response = await fetch('/api/gemini/advice', {
@@ -105,7 +126,9 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
             windSpeed: `${weather.windSpeed} mph`,
             windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
             solunarScore: solunar.ratingScore,
+            solunarQuality: solunar.overallQuality,
             moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
+            solunarBestTimes: bestTimesCombined,
             weather: weather.weatherDescription,
             targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
           },
@@ -130,12 +153,13 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
       setQaHistory(updatedHistory);
       saveLocalChatHistory(updatedHistory);
       syncChatMessageToServer(completedItem);
+      setTimeout(scrollToQaBottom, 50);
     } catch (e) {
       const fallbackItem: SyncedChatMessage = {
         id: itemId,
         question: text,
         answer:
-          '🎣 **Fishtrap Pro Tip:** With USACE water temp at ' +
+          '🎣 **Fishtrap Angler Tip:** With USACE water temp at ' +
           waterTempDisplay +
           ', focus on 10–18 ft ledges and secondary points with football jigs and deep diving crankbaits during peak solunar windows.',
         isLoading: false,
@@ -149,21 +173,22 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
       setQaHistory(updatedHistory);
       saveLocalChatHistory(updatedHistory);
       syncChatMessageToServer(fallbackItem);
+      setTimeout(scrollToQaBottom, 50);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleRemoveItem = async (id: string) => {
+    const updated = qaHistory.filter((item) => item.id !== id);
+    setQaHistory(updated);
+    await removeChatMessage(id);
   };
 
   const handleClearHistory = async () => {
     setQaHistory([]);
     await clearSyncedChatHistory();
   };
-
-  useEffect(() => {
-    if (qaHistory.length > 0) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [qaHistory]);
 
   const quickPrompts = [
     '🎣 Freshwater Stripers at Fishtrap Dam?',
@@ -190,7 +215,7 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg sm:text-xl font-black text-slate-100 flex items-center gap-2">
-                AI Pro Angler Tactical Briefing
+                AI Angler Tactical Briefing
               </h2>
               <span className="text-[10px] uppercase font-black px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40">
                 Pikeville & Fishtrap
@@ -212,7 +237,7 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
           className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition shadow-lg hover:scale-105"
         >
           <MessageSquare className="w-3.5 h-3.5" />
-          <span>Open Full AI Co-Pilot</span>
+          <span>Open AI Angler Guide</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -308,7 +333,7 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
           <div className="flex items-center gap-2">
             <Bot className="w-4 h-4 text-teal-400" />
             <h3 className="text-xs sm:text-sm font-bold text-slate-200 uppercase tracking-wide">
-              Ask AI Pro Angler Anything
+              Ask AI Angler Guide Anything
             </h3>
             <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
               Synced Across Mobile & Desktop
@@ -370,50 +395,89 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
 
         {/* Conversation Thread Feed with Clearly Separated Question & AI Response Containers */}
         {qaHistory.length > 0 && (
-          <div className="space-y-4 pt-2 max-h-[420px] overflow-y-auto pr-1">
-            {qaHistory.map((item) => (
-              <div key={item.id} className="space-y-2">
-                {/* 1. SEPARATE USER QUESTION CONTAINER */}
-                <div className="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 shadow-md">
-                  <div className="flex items-center justify-between text-teal-300 font-bold mb-1 text-xs">
-                    <span className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Your Question</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">{item.timestamp}</span>
-                  </div>
-                  <p className="text-slate-100 font-semibold text-xs sm:text-sm pl-5">
-                    {item.question}
-                  </p>
-                </div>
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Question History ({qaHistory.length})
+              </span>
+              <button
+                id="btn-clear-overview-ai-history"
+                onClick={handleClearHistory}
+                className="flex items-center gap-1 text-[10px] font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 transition"
+                title="Clear all question history"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear All</span>
+              </button>
+            </div>
 
-                {/* 2. SEPARATE AI RESPONSE CONTAINER */}
-                <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 shadow-lg">
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 mb-2.5">
-                    <div className="flex items-center gap-2 text-emerald-400 font-black text-xs">
-                      <Bot className="w-4 h-4 text-emerald-400" />
-                      <span className="uppercase tracking-wider">AI Pro Angler Tactical Advice</span>
+            <div
+              ref={qaContainerRef}
+              className="space-y-4 max-h-[420px] overflow-y-auto pr-1"
+            >
+              {qaHistory.map((item) => (
+                <div key={item.id} className="space-y-2 group relative">
+                  {/* 1. SEPARATE USER QUESTION CONTAINER */}
+                  <div className="bg-slate-900/90 border border-teal-500/40 rounded-2xl p-3.5 shadow-md relative">
+                    <div className="flex items-center justify-between text-teal-300 font-bold mb-1 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-teal-400" />
+                        <span>Your Question</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-mono">{item.timestamp}</span>
+                        <button
+                          id={`delete-briefing-q-${item.id}`}
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition"
+                          title="Remove this question"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold flex items-center gap-1 border border-emerald-500/30">
-                      <Waves className="w-2.5 h-2.5" />
-                      USACE Water: {waterTempDisplay}
-                    </span>
+                    <p className="text-slate-100 font-semibold text-xs sm:text-sm pl-5">
+                      {item.question}
+                    </p>
                   </div>
 
-                  {item.isLoading ? (
-                    <div className="flex items-center gap-2 text-teal-300 py-3 text-xs">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Analyzing Fishtrap Lake USACE water temp ({waterTempDisplay}) & feeding patterns...</span>
+                  {/* 2. SEPARATE AI RESPONSE CONTAINER */}
+                  <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 shadow-lg relative">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 mb-2.5">
+                      <div className="flex items-center gap-2 text-emerald-400 font-black text-xs">
+                        <Bot className="w-4 h-4 text-emerald-400" />
+                        <span className="uppercase tracking-wider">AI Angler Tactical Advice</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold flex items-center gap-1 border border-emerald-500/30">
+                          <Waves className="w-2.5 h-2.5" />
+                          USACE Water: {waterTempDisplay}
+                        </span>
+                        <button
+                          id={`delete-briefing-ans-${item.id}`}
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition"
+                          title="Remove this entry"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="markdown-body text-xs text-slate-200 leading-relaxed space-y-2 [&_h3]:text-sm [&_h3]:font-black [&_h3]:text-slate-100 [&_h3]:mt-2 [&_strong]:text-slate-100 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4">
-                      <Markdown>{item.answer || ''}</Markdown>
-                    </div>
-                  )}
+
+                    {item.isLoading ? (
+                      <div className="flex items-center gap-2 text-teal-300 py-3 text-xs">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Analyzing Fishtrap Lake USACE water temp ({waterTempDisplay}) & feeding patterns...</span>
+                      </div>
+                    ) : (
+                      <div className="markdown-body text-xs text-slate-200 leading-relaxed space-y-2 [&_h3]:text-sm [&_h3]:font-black [&_h3]:text-slate-100 [&_h3]:mt-2 [&_strong]:text-slate-100 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4">
+                        <Markdown>{item.answer || 'Target high-percentage transition shelves and secondary creek channels during solunar feeding windows.'}</Markdown>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
+              ))}
+            </div>
           </div>
         )}
       </div>
