@@ -1,0 +1,7 @@
+{
+  "name": "Angler's Daily Dashboard",
+  "description": "Comprehensive daily fishing dashboard featuring Pikeville KY weather, Fishtrap Lake levels & inflow/outflow hydrology, live Doppler weather radar, solunar feeding peaks, barometric trends, species bite ratings, and tactical gear recommendations.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
