@@ -15,7 +15,7 @@ import { AndroidQRView } from './components/AndroidQRView';
 import { AIAssistant } from './components/AIAssistant';
 import { AIOverviewBriefing } from './components/AIOverviewBriefing';
 import { calculateSolunar } from './utils/solunar';
-import { fetchWeatherData, POPULAR_FISHING_LOCATIONS } from './utils/weather';
+import { fetchWeatherData, FISHTRAP_LAKE_LOCATION } from './utils/weather';
 import { getComputedSpeciesList } from './utils/speciesData';
 import { FISHTRAP_LAKE_HYDROLOGY, fetchFishtrapHydrology, LakeHydrologyData } from './utils/lakeHydrology';
 import {
@@ -87,87 +87,7 @@ const INITIAL_SAMPLE_CATCHES: CatchRecord[] = [
 ];
 
 export default function App() {
-  const [savedLocations, setSavedLocations] = useState<LocationInfo[]>(() => {
-    const saved = localStorage.getItem('anglers_daily_saved_locations');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return POPULAR_FISHING_LOCATIONS;
-  });
-
-  const [currentLocation, setCurrentLocation] = useState<LocationInfo>(() => {
-    const saved = localStorage.getItem('angler_saved_location');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // ignore
-      }
-    }
-    return POPULAR_FISHING_LOCATIONS[0];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('anglers_daily_saved_locations', JSON.stringify(savedLocations));
-  }, [savedLocations]);
-
-  const handleAddLocation = (newLoc: LocationInfo) => {
-    setSavedLocations((prev) => {
-      const exists = prev.some(
-        (l) =>
-          l.name.toLowerCase() === newLoc.name.toLowerCase() ||
-          (Math.abs(l.lat - newLoc.lat) < 0.001 && Math.abs(l.lon - newLoc.lon) < 0.001)
-      );
-      if (exists) {
-        return prev.map((l) =>
-          l.name.toLowerCase() === newLoc.name.toLowerCase() ? newLoc : l
-        );
-      }
-      return [newLoc, ...prev];
-    });
-    setCurrentLocation(newLoc);
-  };
-
-  const handleRemoveLocation = (locToRemove: LocationInfo) => {
-    setSavedLocations((prev) => {
-      const updated = prev.filter(
-        (l) =>
-          !(
-            l.name === locToRemove.name &&
-            Math.abs(l.lat - locToRemove.lat) < 0.001 &&
-            Math.abs(l.lon - locToRemove.lon) < 0.001
-          )
-      );
-
-      // If removed active location, switch to first available
-      if (
-        locToRemove.name === currentLocation.name &&
-        Math.abs(locToRemove.lat - currentLocation.lat) < 0.001
-      ) {
-        if (updated.length > 0) {
-          setCurrentLocation(updated[0]);
-        } else {
-          const fallback = POPULAR_FISHING_LOCATIONS[0];
-          setCurrentLocation(fallback);
-          return [fallback];
-        }
-      }
-
-      return updated.length > 0 ? updated : [POPULAR_FISHING_LOCATIONS[0]];
-    });
-  };
-
-  const handleResetLocations = () => {
-    setSavedLocations(POPULAR_FISHING_LOCATIONS);
-    setCurrentLocation(POPULAR_FISHING_LOCATIONS[0]);
-  };
+  const currentLocation = FISHTRAP_LAKE_LOCATION;
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial');
@@ -191,7 +111,6 @@ export default function App() {
   const [prefillCatchSpecies, setPrefillCatchSpecies] = useState('');
   const [prefillCatchLure, setPrefillCatchLure] = useState('');
 
-  const [isGpsLoading, setIsGpsLoading] = useState(false);
   const [isLoadingWeather, setIsLoadingWeather] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
@@ -217,8 +136,6 @@ export default function App() {
         setIsCatchModalOpen(true);
       } else if (e.key === 'u' || e.key === 'U') {
         setUnitSystem((prev) => (prev === 'imperial' ? 'metric' : 'imperial'));
-      } else if (e.key === 'g' || e.key === 'G') {
-        handleUseGps();
       } else if (e.key === 'Escape') {
         setIsCatchModalOpen(false);
         setIsQrModalOpen(false);
@@ -249,11 +166,6 @@ export default function App() {
     localStorage.setItem('anglers_daily_catch_log', JSON.stringify(catches));
   }, [catches]);
 
-  // Save location to localStorage
-  useEffect(() => {
-    localStorage.setItem('angler_saved_location', JSON.stringify(currentLocation));
-  }, [currentLocation]);
-
   // Fetch USACE live hydrology on mount and interval
   useEffect(() => {
     fetchFishtrapHydrology().then((data) => {
@@ -261,7 +173,7 @@ export default function App() {
     });
   }, []);
 
-  // Fetch weather when location or date changes
+  // Fetch weather when date changes
   useEffect(() => {
     let isCancelled = false;
     async function loadData() {
@@ -297,35 +209,6 @@ export default function App() {
     return getComputedSpeciesList(currentWeather, solunarData);
   }, [currentWeather, solunarData]);
 
-  // Handle GPS location
-  const handleUseGps = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported on this device/browser.');
-      return;
-    }
-
-    setIsGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = +(pos.coords.latitude.toFixed(2));
-        const lon = +(pos.coords.longitude.toFixed(2));
-        setCurrentLocation({
-          name: `Current GPS Spot (${lat}, ${lon})`,
-          region: 'Your Device Coordinates',
-          lat,
-          lon,
-          isGps: true,
-        });
-        setIsGpsLoading(false);
-      },
-      (err) => {
-        console.warn('GPS location request error:', err);
-        setIsGpsLoading(false);
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  };
-
   const handleAddCatch = (catchData: Omit<CatchRecord, 'id'>) => {
     const newRecord: CatchRecord = {
       ...catchData,
@@ -349,19 +232,12 @@ export default function App() {
       {/* App Header */}
       <Header
         currentLocation={currentLocation}
-        onSelectLocation={setCurrentLocation}
-        savedLocations={savedLocations}
-        onAddLocation={handleAddLocation}
-        onRemoveLocation={handleRemoveLocation}
-        onResetLocations={handleResetLocations}
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
         unitSystem={unitSystem}
         onToggleUnits={() =>
           setUnitSystem((prev) => (prev === 'imperial' ? 'metric' : 'imperial'))
         }
-        onUseGps={handleUseGps}
-        isGpsLoading={isGpsLoading}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         catchCount={catches.length}

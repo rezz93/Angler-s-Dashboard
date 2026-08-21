@@ -1,20 +1,14 @@
 import { CurrentWeather, HourlyForecastItem, LocationInfo, PressureTrend, SolunarData, TideData } from '../types';
 
+export const FISHTRAP_LAKE_LOCATION: LocationInfo = {
+  name: 'Fishtrap Lake',
+  region: 'Pikeville, KY, USA',
+  lat: 37.4253,
+  lon: -82.4182,
+};
+
 export const POPULAR_FISHING_LOCATIONS: LocationInfo[] = [
-  { name: 'Fishtrap Lake', region: 'Pikeville, KY, USA', lat: 37.4253, lon: -82.4182 },
-  { name: 'Pikeville (Levisa Fork & Dewey)', region: 'Pikeville, KY, USA', lat: 37.48, lon: -82.52 },
-  { name: 'Lake Okeechobee', region: 'Florida, USA', lat: 26.96, lon: -80.83 },
-  { name: 'Lake Guntersville', region: 'Alabama, USA', lat: 34.36, lon: -86.29 },
-  { name: 'Lake Erie (Western Basin)', region: 'Ohio / Michigan, USA', lat: 41.65, lon: -82.80 },
-  { name: 'Kenai River', region: 'Alaska, USA', lat: 60.55, lon: -151.25 },
-  { name: 'Florida Keys (Islamorada)', region: 'Florida, USA', lat: 24.92, lon: -80.62 },
-  { name: 'Lake of the Woods', region: 'Minnesota, USA', lat: 49.00, lon: -94.75 },
-  { name: 'Sacramento-San Joaquin Delta', region: 'California, USA', lat: 38.08, lon: -121.68 },
-  { name: 'St. Lawrence River (1000 Islands)', region: 'New York, USA', lat: 44.33, lon: -75.92 },
-  { name: 'Lake Fork', region: 'Texas, USA', lat: 32.81, lon: -95.53 },
-  { name: 'Chesapeake Bay', region: 'Maryland, USA', lat: 38.98, lon: -76.49 },
-  { name: 'Columbia River Gorge', region: 'Oregon / Washington, USA', lat: 45.71, lon: -121.51 },
-  { name: 'Loch Ness', region: 'Highlands, Scotland', lat: 57.32, lon: -4.42 },
+  FISHTRAP_LAKE_LOCATION,
 ];
 
 export async function fetchWeatherData(
