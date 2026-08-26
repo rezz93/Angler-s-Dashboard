@@ -6,6 +6,8 @@ export interface SyncedChatMessage {
   answer?: string;
   timestamp: string;
   isLoading?: boolean;
+  /** Which engine produced the answer: live Gemini, the Express route, or the bundled engine. */
+  source?: 'gemini' | 'server' | 'heuristics';
 }
 
 const STORAGE_KEY = 'anglers_ai_advisor_synced_chat_v1';

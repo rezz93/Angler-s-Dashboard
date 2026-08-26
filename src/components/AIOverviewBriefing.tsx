@@ -27,6 +27,7 @@ import {
   subscribeToChatUpdates,
   saveLocalChatHistory,
 } from '../utils/aiChatStore';
+import { requestAnglerAdvice } from '../utils/geminiAdvice';
 
 interface AIOverviewBriefingProps {
   location: LocationInfo;
@@ -50,8 +51,9 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const qaContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const actualWaterTemp = hydrology.waterTempF || 79.4;
-  const waterTempDisplay = `${actualWaterTemp.toFixed(1)}°F`;
+  const waterTempDisplay = hydrology.waterTempF > 0
+    ? `${hydrology.waterTempF.toFixed(1)}°F`
+    : 'unavailable';
 
   // Subscribe to real-time synced AI chat updates (shared with full assistant & Android)
   useEffect(() => {
@@ -110,40 +112,35 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
     const bestTimesCombined = `${majorTimesSummary}; ${minorTimesSummary}`;
 
     try {
-      const response = await fetch('/api/gemini/advice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: text,
-          conditions: {
-            location: `${location.name} (${location.region})`,
-            pressure: `${weather.pressureInHg} inHg / ${weather.pressureHpa} hPa`,
-            pressureTrend: weather.pressureTrend,
-            airTemp: `${weather.temp}°F`,
-            waterTemp: `${waterTempDisplay} (USACE Live Dam Sensor #FTPK2)`,
-            inflowOutflow: `${hydrology.inflowCfs} cfs inflow / ${hydrology.outflowCfs} cfs outflow`,
-            poolElevation: `${hydrology.poolElevationFt.toFixed(2)} ft (Summer Pool: ${hydrology.summerPoolFt.toFixed(2)} ft)`,
-            windSpeed: `${weather.windSpeed} mph`,
-            windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
-            solunarScore: solunar.ratingScore,
-            solunarQuality: solunar.overallQuality,
-            moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
-            solunarBestTimes: bestTimesCombined,
-            weather: weather.weatherDescription,
-            targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
-          },
-        }),
+      const { advice, source, error } = await requestAnglerAdvice(text, {
+        location: `${location.name} (${location.region})`,
+        pressure: `${weather.pressureInHg} inHg / ${weather.pressureHpa} hPa`,
+        pressureTrend: weather.pressureTrend,
+        airTemp: `${weather.temp}°F`,
+        waterTemp: `${waterTempDisplay} (USACE Live Dam Sensor #FTPK2)`,
+        inflowOutflow: `${hydrology.inflowCfs} cfs inflow / ${hydrology.outflowCfs} cfs outflow`,
+        poolElevation: `${hydrology.poolElevationFt.toFixed(2)} ft (Summer Pool: ${hydrology.summerPoolFt.toFixed(2)} ft)`,
+        windSpeed: `${weather.windSpeed} mph`,
+        windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
+        solunarScore: solunar.ratingScore,
+        solunarQuality: solunar.overallQuality,
+        moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
+        solunarBestTimes: bestTimesCombined,
+        weather: weather.weatherDescription,
+        targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
       });
 
-      const data = await response.json();
-      const answerText = data.advice || 'Target primary main lake points and creek channels near current seams.';
+      if (error) {
+        console.warn('Gemini unavailable, answered with the local tactical engine:', error);
+      }
 
       const completedItem: SyncedChatMessage = {
         id: itemId,
         question: text,
-        answer: answerText,
+        answer: advice,
         isLoading: false,
         timestamp,
+        source,
       };
 
       const updatedHistory = nextList.map((item) =>
