@@ -86,6 +86,11 @@ A high-precision, tactical fishing forecast dashboard and digital logbook built 
    APP_URL="http://localhost:3000"
    ```
 
+   On the static GitHub Pages deployment there is no server to hold this key. Use the
+   **AI Key** button in the AI Angler Guide to store a Google AI Studio key in the browser;
+   requests then go straight to Gemini. Without a key, briefings are produced by the bundled
+   tactical engine from live USACE and weather telemetry.
+
 4. **Start Development Server**:
    ```bash
    npm run dev

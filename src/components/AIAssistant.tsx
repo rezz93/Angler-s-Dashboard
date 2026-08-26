@@ -20,7 +20,9 @@ import {
   Thermometer,
   Calendar,
   Compass,
-  ArrowUpRight
+  ArrowUpRight,
+  KeyRound,
+  ExternalLink
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { CurrentWeather, LocationInfo, SolunarData, UnitSystem } from '../types';
@@ -35,6 +37,12 @@ import {
   subscribeToChatUpdates,
   saveLocalChatHistory,
 } from '../utils/aiChatStore';
+import {
+  requestAnglerAdvice,
+  getGeminiApiKey,
+  setGeminiApiKey,
+  subscribeToGeminiKeyChanges,
+} from '../utils/geminiAdvice';
 
 interface AIAssistantProps {
   currentLocation: LocationInfo;
@@ -58,7 +66,12 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [chatHistory, setChatHistory] = useState<SyncedChatMessage[]>(() => getLocalChatHistory());
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [apiKey, setApiKey] = useState(() => getGeminiApiKey());
+  const [keyDraft, setKeyDraft] = useState('');
+  const [showKeyPanel, setShowKeyPanel] = useState(false);
   const chatMessagesContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => subscribeToGeminiKeyChanges(setApiKey), []);
 
   // Solunar Best Times String
   const majorTimesSummary = solunar.majorPeriods && solunar.majorPeriods.length > 0
@@ -147,40 +160,35 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
     setTimeout(scrollToChatBottom, 50);
 
     try {
-      const response = await fetch('/api/gemini/advice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: text,
-          conditions: {
-            location: `${currentLocation.name} (${currentLocation.region})`,
-            weather: weather.weatherDescription,
-            airTemp: `${weather.temp}°F`,
-            pressure: `${weather.pressureInHg} inHg / ${weather.pressureHpa} hPa`,
-            pressureTrend: weather.pressureTrend,
-            waterTemp: `${waterTempDisplay} (USACE Live Dam Sensor #FTPK2)`,
-            inflowOutflow: `${hydrology.inflowCfs} cfs inflow / ${hydrology.outflowCfs} cfs outflow`,
-            poolElevation: `${hydrology.poolElevationFt.toFixed(2)} ft (Summer Pool: ${hydrology.summerPoolFt.toFixed(2)} ft)`,
-            windSpeed: `${weather.windSpeed} mph`,
-            windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
-            solunarScore: solunar.ratingScore,
-            solunarQuality: solunar.overallQuality,
-            moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
-            solunarBestTimes: bestTimesCombined,
-            targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
-          },
-        }),
+      const { advice, source, error } = await requestAnglerAdvice(text, {
+        location: `${currentLocation.name} (${currentLocation.region})`,
+        weather: weather.weatherDescription,
+        airTemp: `${weather.temp}°F`,
+        pressure: `${weather.pressureInHg} inHg / ${weather.pressureHpa} hPa`,
+        pressureTrend: weather.pressureTrend,
+        waterTemp: `${waterTempDisplay} (USACE Live Dam Sensor #FTPK2)`,
+        inflowOutflow: `${hydrology.inflowCfs} cfs inflow / ${hydrology.outflowCfs} cfs outflow`,
+        poolElevation: `${hydrology.poolElevationFt.toFixed(2)} ft (Summer Pool: ${hydrology.summerPoolFt.toFixed(2)} ft)`,
+        windSpeed: `${weather.windSpeed} mph`,
+        windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
+        solunarScore: solunar.ratingScore,
+        solunarQuality: solunar.overallQuality,
+        moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
+        solunarBestTimes: bestTimesCombined,
+        targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
       });
 
-      const data = await response.json();
-      const aiReplyText = data.advice || 'Target deep points and creek channel bends with slow finesse presentations during major solunar windows.';
+      if (error) {
+        console.warn('Gemini unavailable, answered with the local tactical engine:', error);
+      }
 
       const completedItem: SyncedChatMessage = {
         id: itemId,
         question: text,
-        answer: aiReplyText,
+        answer: advice,
         isLoading: false,
         timestamp,
+        source,
       };
 
       const updatedHistory = nextList.map((item) =>
@@ -258,6 +266,27 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <span
+              className={`text-[10px] px-2.5 py-1 rounded-full font-bold flex items-center gap-1 border ${
+                apiKey
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              {apiKey ? 'Gemini Live' : 'Offline Tactical Engine'}
+            </span>
+            <button
+              onClick={() => {
+                setKeyDraft('');
+                setShowKeyPanel((open) => !open);
+              }}
+              className="text-xs text-slate-300 hover:text-teal-300 p-1.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-teal-500/40 transition flex items-center gap-1"
+              title="Configure Gemini API key"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>AI Key</span>
+            </button>
             <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
               Desktop & Android Synced
@@ -274,6 +303,61 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
             )}
           </div>
         </div>
+
+        {showKeyPanel && (
+          <div className="mt-4 bg-slate-950/90 border border-teal-500/30 rounded-2xl p-4 space-y-2.5 relative z-10">
+            <div className="flex items-center gap-2 text-xs font-bold text-teal-300 uppercase tracking-wide">
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Gemini API Key</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              This dashboard is hosted as static files, so there is no server to hold a key. Paste
+              your own Google AI Studio key to get live Gemini briefings — it is stored only in this
+              browser and sent directly to Google. Without a key, answers come from the bundled
+              tactical engine using live USACE and weather telemetry.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="password"
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+                placeholder={apiKey ? 'Key saved — paste a new key to replace it' : 'AIza…'}
+                className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 focus:border-teal-400 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition font-mono"
+              />
+              <button
+                onClick={() => {
+                  setGeminiApiKey(keyDraft);
+                  setKeyDraft('');
+                  setShowKeyPanel(false);
+                }}
+                disabled={!keyDraft.trim()}
+                className="px-3.5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-xl text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Save Key
+              </button>
+              {apiKey && (
+                <button
+                  onClick={() => {
+                    setGeminiApiKey('');
+                    setKeyDraft('');
+                  }}
+                  className="px-3 py-2 text-xs font-bold text-rose-300 hover:text-rose-200 bg-slate-900 border border-rose-500/30 rounded-xl transition"
+                >
+                  Remove
+                </button>
+              )}
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-teal-300 hover:text-teal-200 flex items-center gap-1 font-semibold"
+              >
+                Get a key
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* 2. DEDICATED REAL-TIME TELEMETRY & TACTICAL WEATHER STATEMENT BRIEFING */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5 relative z-10">
@@ -548,6 +632,21 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                     <span className="uppercase tracking-wider">AI Angler Tactical Advice</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {item.answer && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                          item.source === 'heuristics' || !item.source
+                            ? 'bg-slate-800 text-slate-300 border-slate-700'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}
+                      >
+                        {item.source === 'gemini'
+                          ? 'Gemini'
+                          : item.source === 'server'
+                          ? 'Server AI'
+                          : 'Offline Engine'}
+                      </span>
+                    )}
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 font-semibold flex items-center gap-1 border border-teal-500/30">
                       <Waves className="w-2.5 h-2.5" />
                       USACE: {waterTempDisplay}
