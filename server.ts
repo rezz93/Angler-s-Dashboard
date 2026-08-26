@@ -98,7 +98,7 @@ app.post('/api/gemini/advice', async (req, res) => {
     if (ai) {
       const systemInstruction = `You are a legendary Master Angler, tournament fishing guide, and fisheries biologist with deep expertise in Pikeville, Kentucky and Fishtrap Lake (USACE reservoir on the Levisa Fork).
 Target species for this lake include: Largemouth Bass, Smallmouth Bass, Crappie (Black & White), Panfish (Bluegill/Sunfish), Catfish (Channel, Flathead, Blue), and Freshwater Striped Bass / Hybrid Stripers.
-You provide direct, precise, actionable answers to the angler's exact question based on official USACE Huntington District real-time water temperature (79.4°F), pool elevation, barometer trend, wind, and solunar feeding windows.
+You provide direct, precise, actionable answers to the angler's exact question based on official USACE Huntington District real-time water temperature, pool elevation, barometer trend, wind, and solunar feeding windows.
 Always include explicit statements about:
 1. Expected Weather Conditions: How current and forecasted weather (barometer, wind, sky condition, temperature) affect fish behavior and positioning today.
 2. Solunar Best Times for the Day: Exact peak feeding windows (Major and Minor solunar periods, dawn/dusk transitions) and how the angler should schedule their key presentations during these times.
@@ -106,7 +106,7 @@ Format your response with clear headings, bullet points, specific lure setups, e
 Directly answer whatever the user asked without repeating generic template summaries.`;
 
       const contextData = conditions
-        ? `\n\nCURRENT FISHTRAP LAKE & PIKEVILLE CONDITIONS & EXPECTED WEATHER:\n- Location: ${conditions.location || 'Fishtrap Lake, Pikeville KY'}\n- Official USACE Lake Water Temp: ${conditions.waterTemp || '79.4°F'}\n- Expected Weather: ${conditions.weather || 'Partly Cloudy'}, Air Temp: ${conditions.airTemp || '75°F'}\n- Barometric Pressure: ${conditions.pressure || '1013 hPa'} (${conditions.pressureTrend || 'Steady'})\n- Wind: ${conditions.windSpeed || '8 mph'} from ${conditions.windDirection || 'SW'}\n- Solunar Best Times for Today: ${conditions.solunarBestTimes || 'Major 1: Dawn, Major 2: Dusk'}\n- Solunar Score: ${conditions.solunarScore || '75'}/100 (${conditions.solunarQuality || 'Good'})\n- Moon Phase: ${conditions.moonPhase || 'Waxing'}\n- Inflow/Outflow: ${conditions.inflowOutflow || '135 cfs in / 181 cfs out'}\n- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`
+        ? `\n\nCURRENT FISHTRAP LAKE & PIKEVILLE CONDITIONS & EXPECTED WEATHER:\n- Location: ${conditions.location || 'Fishtrap Lake, Pikeville KY'}\n- Official USACE Lake Water Temp: ${conditions.waterTemp || 'unavailable'}\n- Expected Weather: ${conditions.weather || 'Partly Cloudy'}, Air Temp: ${conditions.airTemp || '75°F'}\n- Barometric Pressure: ${conditions.pressure || '1013 hPa'} (${conditions.pressureTrend || 'Steady'})\n- Wind: ${conditions.windSpeed || '8 mph'} from ${conditions.windDirection || 'SW'}\n- Solunar Best Times for Today: ${conditions.solunarBestTimes || 'Major 1: Dawn, Major 2: Dusk'}\n- Solunar Score: ${conditions.solunarScore || '75'}/100 (${conditions.solunarQuality || 'Good'})\n- Moon Phase: ${conditions.moonPhase || 'Waxing'}\n- Inflow/Outflow: ${conditions.inflowOutflow || 'unavailable'}\n- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`
         : '';
 
       try {
@@ -273,143 +273,6 @@ function generateHeuristicAdvice(prompt: string, conditions?: any): string {
 
 *Tight lines and make every cast count on Fishtrap!*`;
 }
-
-// Fishtrap Lake Live Hydrology API Endpoint (USACE Huntington District)
-app.get('/api/hydrology/fishtrap', async (req, res) => {
-  try {
-    let poolElevation = 757.48;
-    let elevationDelta24h = 0.00;
-    let inflow = 135.12;
-    let outflow = 181.20;
-    let tailwaterElevation = 671.18;
-    let tailwaterStage = 11.22;
-    let waterTemp = 79.4;
-    let precip24hr = 0.01;
-    let timestamp = 'Thu Aug 20 2026 10:20 am EDT';
-    let observationDate = 'Aug 20, 2026';
-    let observationTime = '10:20 am EDT';
-    let measurementTime = '9:45 am EDT';
-    let waterTempTime = '9:30 am EDT';
-
-    // Fetch official live JSON feed directly from USACE Huntington District
-    try {
-      const response = await fetch('https://www.lrh-wc.usace.army.mil/wm/data/json/projects/frl_15M.min.json.js', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/javascript, */*; q=0.01',
-        },
-        signal: AbortSignal.timeout(4000),
-      });
-
-      if (response.ok) {
-        const data: any = await response.json();
-        const frl = data?.frl;
-
-        if (frl) {
-          if (typeof frl?.pool_cur?.elev === 'number') {
-            poolElevation = frl.pool_cur.elev;
-          }
-          if (typeof frl?.pool_cur?.chng_24_hr === 'number') {
-            elevationDelta24h = frl.pool_cur.chng_24_hr;
-          }
-          if (typeof frl?.pool_cur?.inflow === 'number') {
-            inflow = frl.pool_cur.inflow;
-          }
-          if (typeof frl?.pool_cur?.precip_24hr_total === 'number') {
-            precip24hr = frl.pool_cur.precip_24hr_total;
-          }
-          if (typeof frl?.outflow_cur?.flow === 'number') {
-            outflow = frl.outflow_cur.flow;
-          }
-          if (typeof frl?.outflow_cur?.elev === 'number') {
-            tailwaterElevation = frl.outflow_cur.elev;
-          }
-          if (typeof frl?.outflow_cur?.stage === 'number') {
-            tailwaterStage = frl.outflow_cur.stage;
-          }
-          if (typeof frl?.outflow_cur?.temp_water === 'number') {
-            waterTemp = frl.outflow_cur.temp_water;
-          }
-
-          if (frl.data_timestamp) {
-            const dateObj = new Date(frl.data_timestamp);
-            const dateStr = dateObj.toLocaleDateString('en-US', {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-              timeZone: 'America/New_York',
-            });
-            const timeStr = dateObj.toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: true,
-              timeZone: 'America/New_York',
-            });
-            timestamp = `Data as of: ${dateStr} ${timeStr} EDT`;
-            observationDate = dateStr;
-            observationTime = `${timeStr} EDT`;
-          }
-
-          if (frl.pool_cur?.elev_updated) {
-            const elevDate = new Date(frl.pool_cur.elev_updated);
-            measurementTime = elevDate.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-              timeZone: 'America/New_York',
-            }).toLowerCase();
-          }
-
-          if (frl.outflow_cur?.temp_water_updated) {
-            const tempDate = new Date(frl.outflow_cur.temp_water_updated);
-            waterTempTime = tempDate.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-              timeZone: 'America/New_York',
-            }).toLowerCase();
-          }
-        }
-      }
-    } catch (fetchErr) {
-      console.log('Using USACE verified telemetry cache:', fetchErr);
-    }
-
-    const diff = (poolElevation - 757.0).toFixed(2);
-    const diffSign = parseFloat(diff) >= 0 ? `+${diff}` : diff;
-
-    res.json({
-      lakeName: 'Fishtrap Lake',
-      location: 'Pikeville / Pike County, KY',
-      source: 'US Army Corps of Engineers (Huntington District)',
-      poolElevationFt: poolElevation,
-      elevationDelta24h: elevationDelta24h,
-      summerPoolFt: 757.0,
-      winterPoolFt: 735.0,
-      tailwaterElevationFt: tailwaterElevation,
-      tailwaterStageFt: tailwaterStage,
-      inflowCfs: inflow,
-      outflowCfs: outflow,
-      waterTempF: waterTemp,
-      precip24hrIn: precip24hr,
-      storageUtilizedPercent: 11,
-      floodStoragePercent: 1,
-      conservationStoragePercent: 100,
-      statusSummary: `Normal Summer Pool (${diffSign} ft vs 757.00 ft rule curve) - Stable Fishing Conditions`,
-      boatingImpactStatus: 'All primary ramps open (Grapevine & Lick Creek). Courtesy dock accessible.',
-      updatedTime: timestamp,
-      observationDate,
-      observationTime,
-      measurementTime,
-      waterTempTime,
-      retrievedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      officialUrl: 'https://www.lrh-wc.usace.army.mil/wm/?basin/bsa/frl',
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to retrieve hydrology data', details: err?.message });
-  }
-});
 
 async function startServer() {
   // Vite middleware in dev, static dist in production

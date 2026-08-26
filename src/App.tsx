@@ -168,9 +168,19 @@ export default function App() {
 
   // Fetch USACE live hydrology on mount and interval
   useEffect(() => {
-    fetchFishtrapHydrology().then((data) => {
-      if (data) setHydrologyData(data);
-    });
+    const controller = new AbortController();
+    const load = () => {
+      fetchFishtrapHydrology(controller.signal).then((data) => {
+        if (data) setHydrologyData(data);
+      });
+    };
+    load();
+    // CWMS publishes on a 15 minute cadence.
+    const timer = window.setInterval(load, 15 * 60 * 1000);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
   }, []);
 
   // Fetch weather when date changes

@@ -32,15 +32,23 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
   );
 
   useEffect(() => {
+    const controller = new AbortController();
     let isMounted = true;
-    fetchFishtrapHydrology().then((result) => {
-      if (isMounted) {
-        setData(result);
-        setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      }
-    });
+    const load = () => {
+      fetchFishtrapHydrology(controller.signal).then((result) => {
+        if (isMounted) {
+          setData(result);
+          setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        }
+      });
+    };
+    load();
+    // CWMS publishes on a 15 minute cadence.
+    const timer = window.setInterval(load, 15 * 60 * 1000);
     return () => {
       isMounted = false;
+      window.clearInterval(timer);
+      controller.abort();
     };
   }, []);
 
@@ -127,8 +135,14 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-400">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-slate-300 font-semibold">Live USACE Synced</span>
+            <span
+              className={`w-2 h-2 rounded-full ${data.isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}
+            />
+            <span className={`font-semibold ${data.isLive ? 'text-slate-300' : 'text-amber-300'}`}>
+              {data.isLive
+                ? `Live USACE Synced${data.dataAgeMinutes !== undefined ? ` (${data.dataAgeMinutes} min old)` : ''}`
+                : 'USACE feed unreachable — values below are not current'}
+            </span>
           </span>
           <span className="text-slate-500">•</span>
           <span>App Refreshed: <strong className="text-slate-200 font-mono">{lastRefreshedAt}</strong></span>
@@ -145,7 +159,7 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
               Lake Elevation
             </span>
             <span className="text-[10px] font-mono font-bold text-slate-400">
-              {data.measurementTime || '9:45 am'}
+              {data.measurementTime}
             </span>
           </div>
 
@@ -164,7 +178,7 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[10px] text-slate-400">
               <span>24hr Change: <strong className="text-slate-300 font-mono">{data.elevationDelta24h.toFixed(2)} ft</strong></span>
-              <span>24hr Precip: <strong className="text-cyan-300 font-mono">{data.precip24hrIn !== undefined ? `${data.precip24hrIn.toFixed(2)} in` : '0.01 in'}</strong></span>
+              <span>24hr Precip: <strong className="text-cyan-300 font-mono">{(data.precip24hrIn ?? 0).toFixed(2)} in</strong></span>
             </div>
             <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
@@ -183,7 +197,7 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
               Inflow Rate
             </span>
             <span className="text-[10px] font-mono font-bold text-slate-400">
-              {data.measurementTime || '9:45 am'}
+              {data.measurementTime}
             </span>
           </div>
 
@@ -210,7 +224,7 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
               Dam Outflow
             </span>
             <span className="text-[10px] font-mono font-bold text-slate-400">
-              {data.measurementTime || '9:45 am'}
+              {data.observationTime}
             </span>
           </div>
 
@@ -236,7 +250,7 @@ export const FishtrapLakeCard: React.FC<FishtrapLakeCardProps> = ({ unitSystem =
               Water Temp
             </span>
             <span className="text-[10px] font-mono font-bold text-slate-400">
-              {data.waterTempTime || '9:30 am'}
+              {data.waterTempTime}
             </span>
           </div>
 
