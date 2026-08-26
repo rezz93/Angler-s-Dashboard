@@ -51,8 +51,9 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   unitSystem,
   hydrology = FISHTRAP_LAKE_HYDROLOGY,
 }) => {
-  const actualWaterTemp = hydrology.waterTempF || 79.4;
-  const waterTempDisplay = `${actualWaterTemp.toFixed(1)}°F`;
+  const waterTempDisplay = hydrology.waterTempF > 0
+    ? `${hydrology.waterTempF.toFixed(1)}°F`
+    : 'unavailable';
 
   const [chatHistory, setChatHistory] = useState<SyncedChatMessage[]>(() => getLocalChatHistory());
   const [inputQuery, setInputQuery] = useState('');
