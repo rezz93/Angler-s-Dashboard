@@ -3,12 +3,15 @@ import Markdown from 'react-markdown';
 import { Wind, Loader2, RefreshCw, CircleSlash } from 'lucide-react';
 import { CurrentWeather } from '../types';
 import { FrontsData, summarizeFronts } from '../utils/weatherFronts';
+import { getSeasonContext } from '../utils/season';
 import { requestAnglerAdvice, AdviceSource } from '../utils/geminiAdvice';
 
 interface FrontOutlookNoteProps {
   fronts?: FrontsData;
   weather: CurrentWeather;
   isLoadingFronts: boolean;
+  /** USACE sensor reading; 0 or undefined means no live reading is available. */
+  waterTempF?: number;
 }
 
 const CACHE_KEY = 'anglers_front_outlook_v1';
@@ -29,10 +32,24 @@ Rules: use only the frontal analysis, forecast discussion, barometer, and wind f
 function localFrontNote(fronts: FrontsData | undefined, weather: CurrentWeather): string {
   const summary = summarizeFronts(fronts);
   const trend = weather.pressureTrend.replace('_', ' ');
-  if (fronts?.status === 'ok' && fronts.nearest) {
-    return `${summary}. Local barometer is ${weather.pressureInHg} inHg and ${trend}, with wind from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Fish reaction baits on windward structure while pressure is dropping, then slow down once it rises behind the boundary.`;
+  const observed = weather.isSimulated
+    ? `Live weather is unavailable, so the barometer and wind shown are seasonal placeholders`
+    : `Local barometer is ${weather.pressureInHg} inHg and ${trend}, with wind from the ${weather.windDirectionText} at ${weather.windSpeed} mph`;
+
+  const nearest = fronts?.status === 'ok' ? fronts.nearest : undefined;
+
+  if (nearest && nearest.distanceMi <= 150) {
+    const passage = fronts?.passage
+      ? ` The model series shows the wind shift and pressure minimum near ${fronts.passage.startLabel}–${fronts.passage.endLabel} (modelled, not an official arrival time).`
+      : '';
+    return `${summary}. ${observed}. With the boundary that close, fish reaction baits on windward structure while pressure is falling and slow down once it rises behind the front.${passage}`;
   }
-  return `${summary}. Local barometer is ${weather.pressureInHg} inHg and ${trend}, so play the air mass: work solunar windows and match the forage rather than waiting on a weather-driven push.`;
+
+  if (nearest) {
+    return `${summary}. ${observed}. That boundary is too far away to drive today's bite, so play the air mass in place: fish the solunar windows and match the forage instead of waiting on a frontal push.`;
+  }
+
+  return `${summary}. ${observed}, so play the air mass: work solunar windows and match the forage rather than waiting on a weather-driven push.`;
 }
 
 function cacheKeyFor(fronts?: FrontsData, weather?: CurrentWeather): string {
@@ -49,11 +66,14 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
   fronts,
   weather,
   isLoadingFronts,
+  waterTempF,
 }) => {
   const [note, setNote] = useState<CachedNote | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const key = cacheKeyFor(fronts, weather);
+  const liveWaterTempF = waterTempF && waterTempF > 0 ? waterTempF : undefined;
+  const seasonContext = getSeasonContext(new Date(), liveWaterTempF);
 
   const generate = useCallback(
     async (force: boolean) => {
@@ -80,8 +100,16 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
           pressureTrend: `${weather.pressureTrend} (6h change ${weather.pressureDelta6h} hPa)`,
           windSpeed: `${weather.windSpeed} mph`,
           windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
+          waterTemp: liveWaterTempF
+            ? `${liveWaterTempF.toFixed(1)}°F (USACE Live Dam Sensor #FTPK2)`
+            : undefined,
           frontalAnalysis: summarizeFronts(fronts),
           frontalDiscussion: fronts?.discussion,
+          date: seasonContext.dateLabel,
+          season: `${seasonContext.label} — ${seasonContext.phase}`,
+          dataNotice: weather.isSimulated
+            ? 'The live weather API was unreachable; the weather values above are seasonal placeholders, not observations.'
+            : undefined,
         });
 
         // The bundled heuristic engine answers species questions, not front questions,
@@ -101,7 +129,15 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
         setIsGenerating(false);
       }
     },
-    [fronts, weather, key],
+    [
+      fronts,
+      weather,
+      key,
+      liveWaterTempF,
+      seasonContext.dateLabel,
+      seasonContext.label,
+      seasonContext.phase,
+    ],
   );
 
   useEffect(() => {

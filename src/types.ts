@@ -5,6 +5,8 @@ export interface LocationInfo {
   region: string;
   lat: number;
   lon: number;
+  /** IANA zone for the water itself, so sun times read local to the lake, not to the device. */
+  timeZone?: string;
   isCustom?: boolean;
   isGps?: boolean;
 }
@@ -34,6 +36,8 @@ export interface CurrentWeather {
   sunset: string;
   estimatedWaterTemp: number;
   estimatedWaterClarity: 'Crystal Clear' | 'Slightly Stained' | 'Murky' | 'Muddy';
+  /** True when the live weather API was unreachable and these values are modelled. */
+  isSimulated?: boolean;
 }
 
 export interface HourlyForecastItem {

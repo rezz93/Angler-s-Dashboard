@@ -1,37 +1,33 @@
+import SunCalc from 'suncalc';
 import { SolunarData, SolunarPeriod } from '../types';
 
 /**
- * Calculates Solunar theory tables, moon phases, and major/minor feeding periods.
+ * Solunar tables for a given day and place.
+ *
+ * Feeding windows are anchored to the real lunar transit (moon overhead), its
+ * opposite (moon underfoot), and actual moonrise/moonset from SunCalc, rather
+ * than a mean-offset approximation — the mean approach drifts by hours because
+ * of the Moon's eccentric, inclined orbit.
  */
 export function calculateSolunar(date: Date, lat: number, lon: number): SolunarData {
   const moonInfo = getMoonPhaseInfo(date);
-  
-  // Approximate solar and lunar transit times based on date and longitude
-  // Longitude offset in hours: -180 to 180 => -12 to +12 hours
-  const dayOfYear = getDayOfYear(date);
-  
-  // Base lunar transit calculation (moves ~50 minutes later every day)
-  const moonAge = moonInfo.age;
-  const baseTransitMinutes = ((moonAge * 50.4 + (lon * 4)) % 1440 + 1440) % 1440;
-  
-  const transitHour = Math.floor(baseTransitMinutes / 60);
-  const transitMin = Math.floor(baseTransitMinutes % 60);
-  const underfootMinutes = (baseTransitMinutes + 720) % 1440;
-  const underfootHour = Math.floor(underfootMinutes / 60);
-  const underfootMin = Math.floor(underfootMinutes % 60);
+  const dayStart = startOfLocalDay(date);
 
-  // Minor periods (Moonrise & Moonset, approximately 6 hours offset from transit)
-  const riseMinutes = (baseTransitMinutes + 360) % 1440;
-  const setMinutes = (baseTransitMinutes + 1080) % 1440;
+  const { transit, underfoot } = findLunarCulminations(dayStart, lat, lon);
+  const { rise, set } = findMoonRiseSet(dayStart, lat, lon);
 
-  const major1: SolunarPeriod = createPeriod(baseTransitMinutes, 60, 'major', 90);
-  const major2: SolunarPeriod = createPeriod(underfootMinutes, 60, 'major', 85);
-  const minor1: SolunarPeriod = createPeriod(riseMinutes, 45, 'minor', 70);
-  const minor2: SolunarPeriod = createPeriod(setMinutes, 45, 'minor', 65);
+  const majorPeriods: SolunarPeriod[] = [
+    createPeriod(transit, 60, 'major', 90),
+    createPeriod(underfoot, 60, 'major', 85),
+  ];
 
-  // Solunar base quality score (New Moon and Full Moon have highest gravitational pull & fish activity)
+  const minorPeriods: SolunarPeriod[] = [];
+  if (rise) minorPeriods.push(createPeriod(rise, 45, 'minor', 70));
+  if (set) minorPeriods.push(createPeriod(set, 45, 'minor', 65));
+
+  // New and full moons pull hardest; quarters are the weakest of the cycle.
   let baseScore = 60;
-  if (moonInfo.phaseName === 'New Moon' || moonInfo.phaseName === 'Full Moon') {
+  if (moonInfo.code === 'new' || moonInfo.code === 'full') {
     baseScore = 92;
   } else if (moonInfo.phaseName.includes('Gibbous') || moonInfo.phaseName.includes('Crescent')) {
     baseScore = 78;
@@ -39,9 +35,16 @@ export function calculateSolunar(date: Date, lat: number, lon: number): SolunarD
     baseScore = 65;
   }
 
-  // Adjust score slightly by latitude day variation
-  const seasonalBoost = Math.sin((dayOfYear / 365) * Math.PI * 2) * 5;
-  const finalRating = Math.min(100, Math.max(35, Math.round(baseScore + seasonalBoost)));
+  // A major window landing on dawn or dusk stacks two feeding triggers.
+  const sunTimes = SunCalc.getTimes(new Date(dayStart.getTime() + 12 * 3600 * 1000), lat, lon);
+  const stacksWithTwilight = [transit, underfoot].some(
+    (t) => nearWithinMinutes(t, sunTimes.sunrise, 90) || nearWithinMinutes(t, sunTimes.sunset, 90),
+  );
+
+  const finalRating = Math.min(
+    100,
+    Math.max(35, Math.round(baseScore + (stacksWithTwilight ? 6 : 0))),
+  );
 
   let overallQuality: SolunarData['overallQuality'] = 'Fair';
   if (finalRating >= 85) overallQuality = 'Epic';
@@ -52,46 +55,99 @@ export function calculateSolunar(date: Date, lat: number, lon: number): SolunarD
   return {
     ratingScore: finalRating,
     overallQuality,
-    majorPeriods: [major1, major2].sort((a, b) => a.start.localeCompare(b.start)),
-    minorPeriods: [minor1, minor2].sort((a, b) => a.start.localeCompare(b.start)),
+    majorPeriods: majorPeriods.sort((a, b) => toMinutes(a.peak) - toMinutes(b.peak)),
+    minorPeriods: minorPeriods.sort((a, b) => toMinutes(a.peak) - toMinutes(b.peak)),
     moonPhaseName: moonInfo.phaseName,
     moonPhaseCode: moonInfo.code,
     moonIllumination: moonInfo.illumination,
     moonAgeDays: Math.round(moonInfo.age * 10) / 10,
-    moonTransitTime: formatTimeFromMinutes(baseTransitMinutes),
-    moonUnderfootTime: formatTimeFromMinutes(underfootMinutes),
-    moonRise: formatTimeFromMinutes(riseMinutes),
-    moonSet: formatTimeFromMinutes(setMinutes),
+    moonTransitTime: formatClockTime(transit),
+    moonUnderfootTime: formatClockTime(underfoot),
+    moonRise: rise ? formatClockTime(rise) : 'No rise today',
+    moonSet: set ? formatClockTime(set) : 'No set today',
   };
 }
 
-function createPeriod(centerMin: number, windowMins: number, type: 'major' | 'minor', rating: number): SolunarPeriod {
-  const startMin = (centerMin - windowMins + 1440) % 1440;
-  const endMin = (centerMin + windowMins) % 1440;
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
 
+/**
+ * Scans the local day for the Moon's highest and lowest altitude: transit
+ * (overhead) and underfoot. Ten-minute sampling is well inside the tolerance
+ * of a one-hour feeding window.
+ */
+function findLunarCulminations(dayStart: Date, lat: number, lon: number): {
+  transit: Date;
+  underfoot: Date;
+} {
+  const stepMs = 10 * 60 * 1000;
+  let transit = dayStart;
+  let underfoot = dayStart;
+  let maxAlt = -Infinity;
+  let minAlt = Infinity;
+
+  for (let ms = 0; ms < 24 * 3600 * 1000; ms += stepMs) {
+    const when = new Date(dayStart.getTime() + ms);
+    const { altitude } = SunCalc.getMoonPosition(when, lat, lon);
+    if (altitude > maxAlt) {
+      maxAlt = altitude;
+      transit = when;
+    }
+    if (altitude < minAlt) {
+      minAlt = altitude;
+      underfoot = when;
+    }
+  }
+
+  return { transit, underfoot };
+}
+
+function findMoonRiseSet(dayStart: Date, lat: number, lon: number): {
+  rise?: Date;
+  set?: Date;
+} {
+  const times = SunCalc.getMoonTimes(dayStart, lat, lon);
   return {
-    start: formatTimeFromMinutes(startMin),
-    end: formatTimeFromMinutes(endMin),
-    peak: formatTimeFromMinutes(centerMin),
+    rise: times.rise instanceof Date && !Number.isNaN(times.rise.getTime()) ? times.rise : undefined,
+    set: times.set instanceof Date && !Number.isNaN(times.set.getTime()) ? times.set : undefined,
+  };
+}
+
+function nearWithinMinutes(a: Date, b: Date | undefined, minutes: number): boolean {
+  if (!b || Number.isNaN(b.getTime())) return false;
+  return Math.abs(a.getTime() - b.getTime()) <= minutes * 60 * 1000;
+}
+
+function createPeriod(
+  center: Date,
+  windowMins: number,
+  type: 'major' | 'minor',
+  rating: number,
+): SolunarPeriod {
+  return {
+    start: formatClockTime(new Date(center.getTime() - windowMins * 60 * 1000)),
+    end: formatClockTime(new Date(center.getTime() + windowMins * 60 * 1000)),
+    peak: formatClockTime(center),
     type,
     rating,
   };
 }
 
-function formatTimeFromMinutes(totalMinutes: number): string {
-  const hrs24 = Math.floor(totalMinutes / 60) % 24;
-  const mins = Math.floor(totalMinutes % 60);
+function formatClockTime(date: Date): string {
+  const hrs24 = date.getHours();
+  const mins = date.getMinutes();
   const period = hrs24 >= 12 ? 'PM' : 'AM';
   const hrs12 = hrs24 % 12 === 0 ? 12 : hrs24 % 12;
-  const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
-  return `${hrs12}:${minsStr} ${period}`;
+  return `${hrs12}:${mins < 10 ? `0${mins}` : mins} ${period}`;
 }
 
-function getDayOfYear(date: Date): number {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date.getTime() - start.getTime();
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
+function toMinutes(clock: string): number {
+  const [time, period] = clock.split(' ');
+  const [hourStr, minStr] = time.split(':');
+  let hour = Number(hourStr) % 12;
+  if (period === 'PM') hour += 12;
+  return hour * 60 + Number(minStr);
 }
 
 interface MoonPhaseResult {
@@ -101,40 +157,35 @@ interface MoonPhaseResult {
   age: number;
 }
 
-export function getMoonPhaseInfo(date: Date): MoonPhaseResult {
-  // Known reference new moon: January 11, 2024 at 11:57 UTC
-  const refDate = new Date(Date.UTC(2024, 0, 11, 11, 57));
-  const synodicMonth = 29.53058867; // days
-  const diffMs = date.getTime() - refDate.getTime();
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  const cyclePosition = ((diffDays % synodicMonth) + synodicMonth) % synodicMonth;
-  const phaseRatio = cyclePosition / synodicMonth; // 0 to 1
+const SYNODIC_MONTH_DAYS = 29.53058867;
 
-  // Illumination percentage
-  const illumination = Math.round((1 - Math.cos(phaseRatio * 2 * Math.PI)) / 2 * 100);
+export function getMoonPhaseInfo(date: Date): MoonPhaseResult {
+  const { fraction, phase } = SunCalc.getMoonIllumination(date);
+  const age = phase * SYNODIC_MONTH_DAYS;
+  const illumination = Math.round(fraction * 100);
 
   let phaseName = 'New Moon';
   let code = 'new';
 
-  if (cyclePosition < 1.5 || cyclePosition > 28.0) {
+  if (age < 1.5 || age > 28.0) {
     phaseName = 'New Moon';
     code = 'new';
-  } else if (cyclePosition < 6.5) {
+  } else if (age < 6.5) {
     phaseName = 'Waxing Crescent';
     code = 'waxing_crescent';
-  } else if (cyclePosition < 8.5) {
+  } else if (age < 8.5) {
     phaseName = 'First Quarter';
     code = 'first_quarter';
-  } else if (cyclePosition < 13.5) {
+  } else if (age < 13.5) {
     phaseName = 'Waxing Gibbous';
     code = 'waxing_gibbous';
-  } else if (cyclePosition < 16.0) {
+  } else if (age < 16.0) {
     phaseName = 'Full Moon';
     code = 'full';
-  } else if (cyclePosition < 21.0) {
+  } else if (age < 21.0) {
     phaseName = 'Waning Gibbous';
     code = 'waning_gibbous';
-  } else if (cyclePosition < 23.0) {
+  } else if (age < 23.0) {
     phaseName = 'Last Quarter';
     code = 'last_quarter';
   } else {
@@ -142,10 +193,5 @@ export function getMoonPhaseInfo(date: Date): MoonPhaseResult {
     code = 'waning_crescent';
   }
 
-  return {
-    phaseName,
-    code,
-    illumination,
-    age: cyclePosition,
-  };
+  return { phaseName, code, illumination, age };
 }

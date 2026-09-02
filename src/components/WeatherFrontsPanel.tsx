@@ -21,8 +21,9 @@ interface WeatherFrontsPanelProps {
   onRefresh: () => void;
 }
 
-/** Fishtrap Lake's approximate position inside the WPC CONUS analysis image. */
-const LAKE_ORIGIN = '74% 53.5%';
+/** Fishtrap Lake's approximate position inside the WPC national forecast image. */
+const LAKE_ORIGIN = '70.7% 47.7%';
+const MAP_ASPECT = 887 / 640;
 
 function relativeAge(iso?: string): string {
   if (!iso) return 'unknown';
@@ -54,9 +55,11 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
   onRefresh,
 }) => {
   const [isMapOpen, setIsMapOpen] = useState(false);
-  const [isZoomed, setIsZoomed] = useState(true);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   const hasFront = fronts?.status === 'ok' && !!fronts.nearest;
+  // WPC reissues the graphic through the day, so tie the URL to this fetch.
+  const mapSrc = `${FRONT_MAP_IMAGE}?t=${encodeURIComponent(fronts?.fetchedAt ?? 'live')}`;
 
   return (
     <div
@@ -202,28 +205,33 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
       {/* Collapsible small front map */}
       {isMapOpen && (
         <div className="space-y-2">
-          <div className="relative w-full h-[220px] sm:h-[300px] bg-white rounded-2xl overflow-hidden border border-slate-800 shadow-inner">
-            <img
-              src={FRONT_MAP_IMAGE}
-              alt="WPC surface analysis showing frontal boundaries"
-              loading="lazy"
-              className="w-full h-full object-cover transition-transform duration-300"
-              style={{
-                transform: isZoomed ? 'scale(2.4)' : 'scale(1)',
-                transformOrigin: LAKE_ORIGIN,
-              }}
-            />
+          <div className="relative w-full h-[220px] sm:h-[300px] bg-white rounded-2xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+            {/* Sized to the image's own aspect ratio so the whole map is visible and the
+                zoom origin lines up with Fishtrap Lake. */}
+            <div
+              className="relative h-full overflow-hidden"
+              style={{ aspectRatio: `${MAP_ASPECT}`, maxWidth: '100%' }}
+            >
+              <img
+                src={mapSrc}
+                alt="WPC Day 1 national forecast showing frontal boundaries and precipitation"
+                loading="lazy"
+                className="w-full h-full transition-transform duration-300"
+                style={{
+                  transform: isZoomed ? 'scale(2.6)' : 'scale(1)',
+                  transformOrigin: LAKE_ORIGIN,
+                }}
+              />
 
-            {isZoomed && (
               <div
-                className="absolute w-3 h-3 rounded-full border-2 border-rose-600 bg-rose-500/40 pointer-events-none"
-                style={{ left: 'calc(50% - 6px)', top: 'calc(50% - 6px)' }}
+                className="absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full border-2 border-rose-600 bg-rose-500/50 pointer-events-none"
+                style={{ left: '70.7%', top: '47.7%' }}
                 title="Fishtrap Lake"
               />
-            )}
+            </div>
 
             <div className="absolute top-2 left-2 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-xl border border-slate-700/80 text-[10px] font-bold text-slate-200 shadow-lg pointer-events-none">
-              WPC Surface Analysis • Fronts & Isobars
+              WPC Day 1 Forecast • Fronts & Precipitation
             </div>
 
             <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
@@ -256,10 +264,9 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
             <span className="flex items-center gap-1">
               <span className="w-4 h-0.5 bg-purple-600 inline-block" /> Occluded / stationary
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-0.5 bg-orange-400 inline-block" /> Trough
+            <span className="text-slate-500">
+              WPC Day 1 national forecast, reissued through the day. Zoom centers on Fishtrap Lake.
             </span>
-            <span className="text-slate-500">Image served live by NOAA/WPC, refreshed ~3-hourly.</span>
           </div>
         </div>
       )}
