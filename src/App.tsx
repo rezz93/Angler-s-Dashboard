@@ -353,7 +353,7 @@ export default function App() {
                             <CloudSun className="w-4 h-4" />
                           </div>
                           <h3 className="text-sm font-black text-slate-100 uppercase tracking-wide">
-                            Live Conditions & Solunar
+                            {currentWeather.isSimulated ? 'Conditions & Solunar' : 'Live Conditions & Solunar'}
                           </h3>
                         </div>
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
@@ -381,6 +381,12 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+
+                      {currentWeather.isSimulated && (
+                        <p className="mt-3 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1.5">
+                          Live weather is unavailable — the values above are seasonal placeholders, not observations.
+                        </p>
+                      )}
 
                       <div className="mt-3 text-xs text-slate-300 bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/80">
                         <div className="flex items-center justify-between text-[11px]">

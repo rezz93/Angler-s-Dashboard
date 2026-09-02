@@ -117,7 +117,7 @@ async function callServer(
   prompt: string,
   conditions: AnglerConditions | undefined,
   signal?: AbortSignal,
-): Promise<string | undefined> {
+): Promise<{ advice: string; source: AdviceSource } | undefined> {
   try {
     const res = await fetch('/api/gemini/advice', {
       method: 'POST',
@@ -127,8 +127,13 @@ async function callServer(
     });
     if (!res.ok) return undefined;
     if (!res.headers.get('content-type')?.includes('application/json')) return undefined;
-    const data = (await res.json()) as { advice?: string };
-    return data.advice?.trim() || undefined;
+    const data = (await res.json()) as { advice?: string; source?: string };
+    const advice = data.advice?.trim();
+    if (!advice) return undefined;
+    // The route answers with its own heuristic engine when no server key is configured;
+    // callers rely on the distinction to substitute their own factual fallback text.
+    const isHeuristic = (data.source ?? '').startsWith('heuristics');
+    return { advice, source: isHeuristic ? 'heuristics' : 'server' };
   } catch {
     // Static hosting has no Express route; fall through to the local engine.
     return undefined;
@@ -157,8 +162,8 @@ export async function requestAnglerAdvice(
     };
   }
 
-  const serverAdvice = await callServer(prompt, conditions, signal);
-  if (serverAdvice) return { advice: serverAdvice, source: 'server' };
+  const server = await callServer(prompt, conditions, signal);
+  if (server) return { advice: server.advice, source: server.source };
 
   return { advice: generateHeuristicAdvice(prompt, conditions), source: 'heuristics' };
 }

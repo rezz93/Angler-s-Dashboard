@@ -5,6 +5,8 @@ export interface LocationInfo {
   region: string;
   lat: number;
   lon: number;
+  /** IANA zone for the water itself, so sun times read local to the lake, not to the device. */
+  timeZone?: string;
   isCustom?: boolean;
   isGps?: boolean;
 }

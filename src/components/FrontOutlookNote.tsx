@@ -10,6 +10,8 @@ interface FrontOutlookNoteProps {
   fronts?: FrontsData;
   weather: CurrentWeather;
   isLoadingFronts: boolean;
+  /** USACE sensor reading; 0 or undefined means no live reading is available. */
+  waterTempF?: number;
 }
 
 const CACHE_KEY = 'anglers_front_outlook_v1';
@@ -64,12 +66,14 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
   fronts,
   weather,
   isLoadingFronts,
+  waterTempF,
 }) => {
   const [note, setNote] = useState<CachedNote | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const key = cacheKeyFor(fronts, weather);
-  const seasonContext = getSeasonContext(new Date());
+  const liveWaterTempF = waterTempF && waterTempF > 0 ? waterTempF : undefined;
+  const seasonContext = getSeasonContext(new Date(), liveWaterTempF);
 
   const generate = useCallback(
     async (force: boolean) => {
@@ -96,6 +100,9 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
           pressureTrend: `${weather.pressureTrend} (6h change ${weather.pressureDelta6h} hPa)`,
           windSpeed: `${weather.windSpeed} mph`,
           windDirection: `${weather.windDirectionText} (${weather.windDirectionDeg}°)`,
+          waterTemp: liveWaterTempF
+            ? `${liveWaterTempF.toFixed(1)}°F (USACE Live Dam Sensor #FTPK2)`
+            : undefined,
           frontalAnalysis: summarizeFronts(fronts),
           frontalDiscussion: fronts?.discussion,
           date: seasonContext.dateLabel,
@@ -122,7 +129,15 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
         setIsGenerating(false);
       }
     },
-    [fronts, weather, key, seasonContext.dateLabel, seasonContext.label, seasonContext.phase],
+    [
+      fronts,
+      weather,
+      key,
+      liveWaterTempF,
+      seasonContext.dateLabel,
+      seasonContext.label,
+      seasonContext.phase,
+    ],
   );
 
   useEffect(() => {

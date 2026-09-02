@@ -39,6 +39,7 @@ export const FISHTRAP_LAKE_LOCATION: LocationInfo = {
   region: 'Pikeville, KY, USA',
   lat: 37.4253,
   lon: -82.4182,
+  timeZone: 'America/New_York',
 };
 
 export const POPULAR_FISHING_LOCATIONS: LocationInfo[] = [
@@ -285,10 +286,10 @@ export function getCompassDirection(degrees: number): string {
   return directions[index];
 }
 
-function formatIsoTime(isoStr: string): string {
+function formatIsoTime(isoStr: string, timeZone?: string): string {
   try {
     const d = new Date(isoStr);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone });
   } catch {
     return '06:30 AM';
   }
@@ -398,8 +399,10 @@ function generateSimulatedWeatherData(
     weatherCode: 2,
     weatherDescription: 'Partly Cloudy (modelled — live weather unavailable)',
     weatherIconName: 'CloudSun',
-    sunrise: formatIsoTime(sunTimes.sunrise.toISOString()),
-    sunset: formatIsoTime(sunTimes.sunset.toISOString()),
+    // SunCalc returns absolute instants, so they are rendered in the lake's zone to match
+    // the live Open-Meteo times (which already arrive local to the lake).
+    sunrise: formatIsoTime(sunTimes.sunrise.toISOString(), location.timeZone),
+    sunset: formatIsoTime(sunTimes.sunset.toISOString(), location.timeZone),
     estimatedWaterTemp: estimateWaterTempF(temp),
     estimatedWaterClarity: 'Slightly Stained',
     isSimulated: true,

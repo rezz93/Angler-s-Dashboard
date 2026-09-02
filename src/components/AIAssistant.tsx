@@ -477,6 +477,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
               fronts={fronts}
               weather={weather}
               isLoadingFronts={isLoadingFronts}
+              waterTempF={hydrology.waterTempF}
             />
           </div>
 
