@@ -71,8 +71,9 @@ export interface FrontsData {
   error?: string;
 }
 
-export const FRONT_MAP_IMAGE = 'https://www.wpc.ncep.noaa.gov/sfc/namussfcwbg.gif';
-export const FRONT_MAP_PAGE = 'https://www.wpc.ncep.noaa.gov/html/sfc2.shtml';
+/** WPC Day 1 national forecast: fronts, pressure centers and precipitation, plainly drawn. */
+export const FRONT_MAP_IMAGE = 'https://www.wpc.ncep.noaa.gov/noaa/noaad1.gif';
+export const FRONT_MAP_PAGE = 'https://www.wpc.ncep.noaa.gov/national_forecast/natfcst.php?day=1';
 
 const API_ROOT = 'https://api.weather.gov';
 const CACHE_KEY = 'anglers_weather_fronts_v1';

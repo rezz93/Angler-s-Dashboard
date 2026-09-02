@@ -28,6 +28,7 @@ import Markdown from 'react-markdown';
 import { CurrentWeather, LocationInfo, SolunarData, UnitSystem } from '../types';
 import { LakeHydrologyData, FISHTRAP_LAKE_HYDROLOGY } from '../utils/lakeHydrology';
 import { FrontsData, summarizeFronts } from '../utils/weatherFronts';
+import { getSeasonContext } from '../utils/season';
 import { FrontOutlookNote } from './FrontOutlookNote';
 import {
   SyncedChatMessage,
@@ -91,13 +92,30 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const bestTimesCombined = `${majorTimesSummary}; ${minorTimesSummary}`;
 
   // Weather Statement Builder
-  const weatherStatement = `Live Tactical Atmospheric Assessment for ${currentLocation.name}: ${weather.weatherDescription} with ambient air temperature at ${weather.temp}°F (feels like ${weather.feelsLike}°F) and ${weather.humidity}% humidity. Wind is active from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Surface barometric pressure registers at ${weather.pressureInHg} inHg (${weather.pressureTrend}). ${
-    weather.pressureTrend === 'falling'
-      ? 'A falling barometer triggers high feeding aggression across all predator species ahead of moving frontal boundaries. Utilize reaction lures (spinnerbaits, squarebill crankbaits, chatterbaits) across windward points and secondary channel cuts.'
-      : weather.pressureTrend === 'rising'
-      ? 'Post-frontal rising high pressure tightens swim bladders, holding fish tight to deep bottom structure, dock pilings, and shaded bluff walls. Downsize presentations to finesse jigs, drop shot rigs, and Ned rigs with subtle cadences.'
-      : 'Steady barometric pressure maintains standard feeding patterns. Fish transition shelves during solunar peak windows and hold in medium depth structure during midday hours.'
-  }`;
+  const seasonContext = getSeasonContext(new Date(), hydrology.waterTempF);
+  const frontContext = summarizeFronts(fronts);
+
+  // Only a boundary the WPC analysis actually places nearby earns front language.
+  const nearbyFrontMi = fronts?.status === 'ok' ? fronts.nearest?.distanceMi : undefined;
+  const frontClause =
+    nearbyFrontMi !== undefined && nearbyFrontMi <= 150
+      ? ` The nearest analysed boundary is a ${fronts?.nearest?.label.toLowerCase()} about ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText}, so treat this as front-influenced air.`
+      : nearbyFrontMi !== undefined
+      ? ` The nearest analysed boundary sits roughly ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} — far enough out that today's pressure change is air-mass driven rather than an imminent passage.`
+      : '';
+
+  const pressureAdvice =
+    weather.pressureTrend === 'falling' || weather.pressureTrend === 'falling_fast'
+      ? `A ${weather.pressureTrend === 'falling_fast' ? 'sharply falling' : 'falling'} barometer generally widens the feeding window. Work reaction lures (spinnerbaits, squarebill crankbaits, chatterbaits) across windward points and secondary channel cuts.`
+      : weather.pressureTrend === 'rising' || weather.pressureTrend === 'rising_fast'
+      ? `${weather.pressureTrend === 'rising_fast' ? 'Sharply rising' : 'Rising'} pressure typically holds fish tighter to deep bottom structure, dock pilings, and shaded bluff walls. Downsize to finesse jigs, drop shot rigs, and Ned rigs with subtle cadences.`
+      : 'Steady barometric pressure keeps feeding patterns routine. Fish transition shelves during solunar peak windows and hold on medium-depth structure through midday.';
+
+  const weatherStatement = `${
+    weather.isSimulated
+      ? `Live weather is unavailable right now, so the numbers below are seasonal placeholders, not observations. `
+      : ''
+  }Tactical Atmospheric Assessment for ${currentLocation.name} on ${seasonContext.dateLabel} (${seasonContext.label}): ${weather.weatherDescription} with ambient air temperature at ${weather.temp}°F (feels like ${weather.feelsLike}°F) and ${weather.humidity}% humidity. Wind is from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Sea-level barometric pressure registers ${weather.pressureInHg.toFixed(2)} inHg (${weather.pressureTrend.replace('_', ' ')}, ${weather.pressureDelta6h} hPa over 6 h). Seasonal pattern: ${seasonContext.phase}. ${pressureAdvice}${frontClause}`;
 
   // Solunar Statement Builder
   const solunarStatement = `Today's Solunar Bite Rating is rated ${solunar.ratingScore}/100 (${solunar.overallQuality} Activity) under a ${solunar.moonPhaseName} (${solunar.moonIllumination}% illumination). Prime feeding windows for today are concentrated during Major Periods: ${
@@ -182,8 +200,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
         solunarBestTimes: bestTimesCombined,
         targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
-        frontalAnalysis: summarizeFronts(fronts),
+        frontalAnalysis: frontContext,
         frontalDiscussion: fronts?.discussion,
+        date: seasonContext.dateLabel,
+        season: `${seasonContext.label} — ${seasonContext.phase}`,
+        dataNotice: weather.isSimulated
+          ? 'The live weather API was unreachable; the weather values above are seasonal placeholders. Say so rather than presenting them as observations.'
+          : undefined,
       });
 
       if (error) {

@@ -23,6 +23,12 @@ export interface AnglerConditions {
   frontalAnalysis?: string;
   /** Front-related sentences from the local NWS forecast discussion. */
   frontalDiscussion?: string;
+  /** Today's date, so tactics are not written for the wrong time of year. */
+  date?: string;
+  /** Calendar season plus the pattern the measured water temperature supports. */
+  season?: string;
+  /** Set when the weather block is modelled rather than observed. */
+  dataNotice?: string;
 }
 
 export const ANGLER_SYSTEM_INSTRUCTION = `You are a legendary Master Angler, tournament fishing guide, and fisheries biologist with deep expertise in Pikeville, Kentucky and Fishtrap Lake (USACE reservoir on the Levisa Fork).
@@ -38,6 +44,8 @@ export function buildConditionsContext(conditions?: AnglerConditions): string {
   if (!conditions) return '';
   return `\n\nCURRENT FISHTRAP LAKE & PIKEVILLE CONDITIONS & EXPECTED WEATHER:
 - Location: ${conditions.location || 'Fishtrap Lake, Pikeville KY'}
+- Date: ${conditions.date || 'unavailable'}
+- Season & Pattern: ${conditions.season || 'unavailable'}
 - Official USACE Lake Water Temp: ${conditions.waterTemp || 'unavailable'}
 - Expected Weather: ${conditions.weather || 'unavailable'}, Air Temp: ${conditions.airTemp || 'unavailable'}
 - Barometric Pressure: ${conditions.pressure || 'unavailable'} (${conditions.pressureTrend || 'steady'})
@@ -49,7 +57,11 @@ export function buildConditionsContext(conditions?: AnglerConditions): string {
 - Inflow/Outflow: ${conditions.inflowOutflow || 'unavailable'}
 - Surface Frontal Analysis (NWS/WPC): ${conditions.frontalAnalysis || 'unavailable'}
 - NWS Forecast Discussion Excerpt: ${conditions.frontalDiscussion || 'unavailable'}
-- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`;
+- Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}${
+    conditions.dataNotice ? `\n- Data Notice: ${conditions.dataNotice}` : ''
+  }
+
+Use only the facts above. Keep every tactic consistent with the date and season stated, and never describe a front, arrival time, or water temperature that is not listed.`;
 }
 
 export function generateHeuristicAdvice(prompt: string, conditions?: AnglerConditions): string {
@@ -58,6 +70,7 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
   const waterTemp = conditions?.waterTemp || 'unavailable';
   const wind = conditions?.windSpeed || 'unavailable';
   const moon = conditions?.moonPhase || 'Current Moon';
+  const season = conditions?.season || 'current season';
 
   // 1. Freshwater Stripers & Hybrid Striped Bass (Fishtrap Lake)
   if (q.includes('striper') || q.includes('striped') || q.includes('wiper') || q.includes('hybrid')) {
@@ -84,7 +97,7 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
   1. **1/16 oz Marabou Jig** in *Monkey Milk*, *Electric Chicken*, or *Pink/White* on 4 lb test fluorocarbon.
   2. **2" Bobby Garland Baby Shad** with slow vertical pendulum cadence.
   3. **Live Minnow on Slip Bobber Rig** pegged right over the top crown of timber.
-• **Barometer Strategy (${pTrend}):** If the barometer is stable or falling, work aggressive horizontal sweeps; under high post-front pressure, deadstick the jig with subtle rod shakes.`;
+• **Barometer Strategy (${pTrend}) · ${season}:** If the barometer is stable or falling, work aggressive horizontal sweeps; under rising high pressure, deadstick the jig with subtle rod shakes.`;
   }
 
   // 3. Panfish & Bluegill
@@ -97,7 +110,7 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
   1. **Live Crickets or Redworms** on a #6 Aberdeen hook, 2–3 ft below a light balsa pencil float.
   2. **1/64 oz Micro Beetle Spin** (Black/Yellow or Chartreuse) on ultralight spinning tackle (2–4 lb line).
   3. **1/32 oz Trout Magnet** with micro split shot worked along shaded dock pilings.
-• **Tactical Note:** Great action all summer long in sheltered coves; fish the shaded bank in late afternoon during peak solunar periods.`;
+• **Tactical Note (${season}):** Work sheltered coves and fish the shaded bank in late afternoon during peak solunar periods; as the water cools, slide out to the first drop off the same banks.`;
   }
 
   // 4. Catfish (Channel, Flathead, Blue)
@@ -124,8 +137,8 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
   - *Top Setup:* 1/5 oz Ned Rig (TRD in PB&J/Gobie) or Drop Shot with 4.5" Roboworm dragged slowly over rock breaks.
 • **Current Barometer Alert (${pTrend}):** ${
       pTrend.includes('falling')
-        ? 'Barometer is falling! Bass are moving shallow to feed aggressively—power fish secondary points with squarebills and spinnerbaits.'
-        : 'Barometer is high/stable—slow down presentation and make bottom contact with finesse jigs and ned rigs.'
+        ? 'Barometer is falling—expect bass to slide shallower and feed harder; power fish secondary points with squarebills and spinnerbaits.'
+        : 'Barometer is steady or rising—slow down presentation and make bottom contact with finesse jigs and ned rigs.'
     }`;
   }
 
@@ -147,7 +160,7 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
   if (q.includes('depth') || q.includes('deep') || q.includes('shallow') || q.includes('sonar')) {
     return `### 🎣 Water Column & Depth Blueprint
 
-**Current Fishtrap Lake Depth Zones (Water Temp: ${waterTemp}):**
+**Current Fishtrap Lake Depth Zones (Water Temp: ${waterTemp} · ${season}):**
 • **Surface to 6 ft:** Dawn/dusk topwater and shallow weed/timber feeding (Panfish, early Bass blitzes).
 • **8 to 16 ft (Prime Thermal Ledge):** Crappie suspended in brush, Largemouth holding on secondary creek drops.
 • **18 to 35 ft (Deep Channels & Structure):** Smallmouth on rocky points, Stripers tracking shad schools, Catfish in river bends.
@@ -160,11 +173,11 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
 
 **Live Weather Analysis:**
 • **Wind Speed (${wind}):** Wind creates "current" on Fishtrap Lake. Always position your boat downwind and cast into wind-blown rocky points where baitfish are trapped.
-• **Water Temp (${waterTemp}):** Warm summer thermoclines concentrate sportfish around deep structure and oxygenated tailwaters.
+• **Water Temp (${waterTemp}) · ${season}:** Match depth to the seasonal pattern above—warm-water thermoclines push fish to deep structure and oxygenated tailwaters, while cooling water pulls them toward bait in the creek arms.
 • **Barometric Trend (${pTrend}):** ${
       pTrend.includes('falling')
-        ? 'Aggressive pre-frontal feeding! Use fast-moving reaction baits.'
-        : 'Fish are locked tight to cover. Focus on slow finesse bottom presentations.'
+        ? 'A falling barometer usually widens the feeding window—lean on fast-moving reaction baits.'
+        : 'Under steady to rising pressure fish hold tighter to cover; focus on slow finesse bottom presentations.'
     }
 • **Solunar Phase (${moon}):** Target peak bite windows when solunar gravitational pull aligns with morning/evening low light.`;
   }
@@ -174,7 +187,7 @@ export function generateHeuristicAdvice(prompt: string, conditions?: AnglerCondi
 
 **Analysis for "${prompt}":**
 • **Location Insight:** Fishtrap Lake (USACE #FTPK2) on the Levisa Fork features steep rocky shorelines, deep creek channels (Grapevine/Hurricane), and rich baitfish populations.
-• **Current Conditions:** Barometer is ${pTrend}, water temp is ~${waterTemp}, and wind is ${wind}.
+• **Current Conditions:** ${season}. Barometer is ${pTrend}, water temp is ~${waterTemp}, and wind is ${wind}.
 • **Recommended Game Plan:**
   1. **Early Morning / Solunar Peaks:** Work windblown points and main lake ledges with reaction baits (Chatterbaits, Spooks, Swimbaits).
   2. **Midday Sun:** Shift to 10–20 ft depths targeting shaded rock bluffs, submerged brush piles, and drop-offs with finesse Ned rigs or 1/16 oz crappie jigs.

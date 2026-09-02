@@ -1,5 +1,38 @@
+import SunCalc from 'suncalc';
 import { CurrentWeather, HourlyForecastItem, LocationInfo, PressureTrend, SolunarData, TideData } from '../types';
 import { FrontalSeries } from './weatherFronts';
+
+interface OpenMeteoCurrent {
+  temperature_2m?: number;
+  relative_humidity_2m?: number;
+  apparent_temperature?: number;
+  precipitation?: number;
+  weather_code?: number;
+  surface_pressure?: number;
+  pressure_msl?: number;
+  wind_speed_10m?: number;
+  wind_direction_10m?: number;
+  wind_gusts_10m?: number;
+  cloud_cover?: number;
+}
+
+interface OpenMeteoHourly {
+  time?: string[];
+  temperature_2m?: number[];
+  precipitation_probability?: number[];
+  weather_code?: number[];
+  surface_pressure?: number[];
+  pressure_msl?: number[];
+  wind_speed_10m?: number[];
+  wind_direction_10m?: number[];
+  uv_index?: number[];
+}
+
+interface OpenMeteoResponse {
+  current?: OpenMeteoCurrent;
+  hourly?: OpenMeteoHourly;
+  daily?: { sunrise?: string[]; sunset?: string[] };
+}
 
 export const FISHTRAP_LAKE_LOCATION: LocationInfo = {
   name: 'Fishtrap Lake',
@@ -22,11 +55,11 @@ export async function fetchWeatherData(
   frontalSeries?: FrontalSeries;
 }> {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover&hourly=temperature_2m,precipitation_probability,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index&daily=sunrise,sunset&timezone=auto&forecast_days=2`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover&hourly=temperature_2m,precipitation_probability,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m,uv_index&daily=sunrise,sunset&timezone=auto&forecast_days=2`;
 
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Weather fetch failed: ${res.statusText}`);
-    const data = await res.json();
+    const data = (await res.json()) as OpenMeteoResponse;
 
     return parseOpenMeteoData(data, solunar, location);
   } catch (err) {
@@ -35,26 +68,31 @@ export async function fetchWeatherData(
   }
 }
 
-function parseOpenMeteoData(data: any, solunar: SolunarData, location: LocationInfo) {
-  const current = data.current || {};
-  const hourly = data.hourly || {};
+function parseOpenMeteoData(data: OpenMeteoResponse, solunar: SolunarData, location: LocationInfo) {
+  const current: OpenMeteoCurrent = data.current || {};
+  const hourly: OpenMeteoHourly = data.hourly || {};
   const daily = data.daily || {};
 
-  const tempF = Math.round((current.temperature_2m * 9) / 5 + 32);
-  const feelsLikeF = Math.round((current.apparent_temperature * 9) / 5 + 32);
-  const windMph = Math.round(current.wind_speed_10m * 0.621371);
-  const windGustsMph = Math.round((current.wind_gusts_10m || current.wind_speed_10m * 1.3) * 0.621371);
+  const tempC = current.temperature_2m ?? 20;
+  const windKph = current.wind_speed_10m ?? 0;
+  const tempF = Math.round((tempC * 9) / 5 + 32);
+  const feelsLikeF = Math.round(((current.apparent_temperature ?? tempC) * 9) / 5 + 32);
+  const windMph = Math.round(windKph * 0.621371);
+  const windGustsMph = Math.round((current.wind_gusts_10m || windKph * 1.3) * 0.621371);
   const windDeg = current.wind_direction_10m || 0;
-  const pressureHpa = Math.round(current.surface_pressure || 1013);
+  // Sea-level pressure, so the reading matches a barometer and the WPC surface
+  // analysis; station pressure at this elevation reads ~40 hPa lower.
+  const pressureHpa = Math.round(current.pressure_msl ?? current.surface_pressure ?? 1013);
   const pressureInHg = +(pressureHpa * 0.02953).toFixed(2);
 
   // Calculate 6-hour pressure change
+  const hourlyPressure = hourly.pressure_msl ?? hourly.surface_pressure;
   let pressureDelta6h = 0;
   let pressureTrend: PressureTrend = 'steady';
-  if (hourly.surface_pressure && hourly.surface_pressure.length >= 12) {
-    const currentIdx = Math.min(new Date().getHours(), hourly.surface_pressure.length - 1);
+  if (hourlyPressure && hourlyPressure.length >= 12) {
+    const currentIdx = Math.min(new Date().getHours(), hourlyPressure.length - 1);
     const pastIdx = Math.max(0, currentIdx - 6);
-    pressureDelta6h = +(hourly.surface_pressure[currentIdx] - hourly.surface_pressure[pastIdx]).toFixed(1);
+    pressureDelta6h = +(hourlyPressure[currentIdx] - hourlyPressure[pastIdx]).toFixed(1);
 
     if (pressureDelta6h > 3) pressureTrend = 'rising_fast';
     else if (pressureDelta6h > 1) pressureTrend = 'rising';
@@ -66,8 +104,7 @@ function parseOpenMeteoData(data: any, solunar: SolunarData, location: LocationI
   const weatherCode = current.weather_code || 0;
   const { description, icon } = getWeatherCodeDetails(weatherCode);
 
-  // Water temp approximation (usually slightly buffered compared to air temp)
-  const estimatedWaterTemp = Math.round(tempF * 0.85 + 8);
+  const estimatedWaterTemp = estimateWaterTempF(tempF);
 
   // Water clarity approximation
   let estimatedWaterClarity: CurrentWeather['estimatedWaterClarity'] = 'Crystal Clear';
@@ -117,7 +154,7 @@ function parseOpenMeteoData(data: any, solunar: SolunarData, location: LocationI
     const hourLabel = hourDate.toLocaleTimeString([], { hour: 'numeric' });
     const hTempF = Math.round(((hourly.temperature_2m?.[i] || 20) * 9) / 5 + 32);
     const hWind = Math.round((hourly.wind_speed_10m?.[i] || 10) * 0.621371);
-    const hPressure = Math.round(hourly.surface_pressure?.[i] || 1013);
+    const hPressure = Math.round(hourlyPressure?.[i] || 1013);
     const hPrecip = Math.round(hourly.precipitation_probability?.[i] || 0);
     const hCode = hourly.weather_code?.[i] || 0;
     const { description: hDesc } = getWeatherCodeDetails(hCode);
@@ -152,18 +189,14 @@ function parseOpenMeteoData(data: any, solunar: SolunarData, location: LocationI
   }
 
   // Tides (marine or coastal check)
-  const isCoastal = location.name.toLowerCase().includes('bay') ||
-    location.name.toLowerCase().includes('keys') ||
-    location.name.toLowerCase().includes('ocean') ||
-    location.name.toLowerCase().includes('coast') ||
-    location.region.toLowerCase().includes('florida');
+  const isCoastal = isCoastalLocation(location);
 
-  const tides: TideData = generateTideSchedule(isCoastal, new Date());
+  const tides: TideData = generateTideSchedule(isCoastal);
 
   const frontalSeries: FrontalSeries | undefined = hourly.time
     ? {
         times: hourly.time,
-        pressureHpa: hourly.surface_pressure || [],
+        pressureHpa: hourlyPressure || [],
         windDirectionDeg: hourly.wind_direction_10m || [],
         tempC: hourly.temperature_2m || [],
       }
@@ -299,7 +332,18 @@ export function getWeatherCodeDetails(code: number): { description: string; icon
   }
 }
 
-function generateTideSchedule(isCoastal: boolean, date: Date): TideData {
+function isCoastalLocation(location: LocationInfo): boolean {
+  const name = location.name.toLowerCase();
+  return (
+    name.includes('bay') ||
+    name.includes('keys') ||
+    name.includes('ocean') ||
+    name.includes('coast') ||
+    location.region.toLowerCase().includes('florida')
+  );
+}
+
+function generateTideSchedule(isCoastal: boolean): TideData {
   if (!isCoastal) {
     return {
       isCoastal: false,
@@ -331,35 +375,40 @@ function generateSimulatedWeatherData(
   hourly: HourlyForecastItem[];
   tides: TideData;
 } {
+  const now = new Date();
+  const sunTimes = SunCalc.getTimes(now, location.lat, location.lon);
+  const temp = seasonalNormalTempF(now);
+
   const current: CurrentWeather = {
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    temp: 72,
-    feelsLike: 74,
+    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    temp,
+    feelsLike: temp + 2,
     windSpeed: 8,
     windGusts: 14,
     windDirectionDeg: 215,
     windDirectionText: 'SW',
-    pressureHpa: 1014,
-    pressureInHg: 29.94,
-    pressureTrend: 'falling',
-    pressureDelta6h: -1.8,
+    pressureHpa: 1016,
+    pressureInHg: 30.0,
+    pressureTrend: 'steady',
+    pressureDelta6h: 0,
     humidity: 58,
-    uvIndex: 6,
+    uvIndex: 5,
     cloudCover: 35,
     precipitationProb: 15,
     weatherCode: 2,
-    weatherDescription: 'Partly Cloudy & Productive',
+    weatherDescription: 'Partly Cloudy (modelled — live weather unavailable)',
     weatherIconName: 'CloudSun',
-    sunrise: '06:12 AM',
-    sunset: '07:58 PM',
-    estimatedWaterTemp: 68,
+    sunrise: formatIsoTime(sunTimes.sunrise.toISOString()),
+    sunset: formatIsoTime(sunTimes.sunset.toISOString()),
+    estimatedWaterTemp: estimateWaterTempF(temp),
     estimatedWaterClarity: 'Slightly Stained',
+    isSimulated: true,
   };
 
   const hourly: HourlyForecastItem[] = [];
   for (let i = 0; i < 24; i++) {
     const hourLabel = `${i % 12 === 0 ? 12 : i % 12} ${i >= 12 ? 'PM' : 'AM'}`;
-    const biteRating = calculateHourlyBiteScore(i, solunar, 'falling', 15, 8);
+    const biteRating = calculateHourlyBiteScore(i, solunar, 'steady', 15, 8);
     let biteCategory: HourlyForecastItem['biteCategory'] = 'Fair';
     if (biteRating >= 85) biteCategory = 'Epic';
     else if (biteRating >= 70) biteCategory = 'Good';
@@ -369,9 +418,9 @@ function generateSimulatedWeatherData(
     hourly.push({
       time: `${i}:00`,
       hourLabel,
-      temp: 68 + Math.round(Math.sin((i / 24) * Math.PI * 2) * 8),
+      temp: temp - 4 + Math.round(Math.sin((i / 24) * Math.PI * 2) * 8),
       windSpeed: 7 + (i % 5),
-      pressureHpa: 1014 - Math.round(i * 0.1),
+      pressureHpa: 1016,
       precipitationProb: 10 + (i % 20),
       weatherCode: 2,
       weatherDescription: 'Partly Cloudy',
@@ -385,6 +434,21 @@ function generateSimulatedWeatherData(
   return {
     current,
     hourly,
-    tides: generateTideSchedule(true, new Date()),
+    tides: generateTideSchedule(isCoastalLocation(location)),
   };
+}
+
+/**
+ * Reservoir surface temperature lags air temperature and stays far closer to the
+ * annual mean, so the estimate is damped toward 50°F rather than tracking air 1:1.
+ * Only a fallback — the USACE sensor reading is preferred wherever it is available.
+ */
+function estimateWaterTempF(airTempF: number): number {
+  return Math.round(50 + (airTempF - 50) * 0.6);
+}
+
+/** Rough monthly normal high for the Pikeville, KY area, used only as a placeholder. */
+function seasonalNormalTempF(date: Date): number {
+  const normals = [43, 48, 57, 67, 75, 82, 85, 85, 79, 68, 56, 46];
+  return normals[date.getMonth()];
 }
