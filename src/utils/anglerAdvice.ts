@@ -19,6 +19,10 @@ export interface AnglerConditions {
   moonPhase?: string;
   solunarBestTimes?: string;
   targetSpecies?: string;
+  /** Nearest analysed surface boundary, from the WPC coded surface bulletin. */
+  frontalAnalysis?: string;
+  /** Front-related sentences from the local NWS forecast discussion. */
+  frontalDiscussion?: string;
 }
 
 export const ANGLER_SYSTEM_INSTRUCTION = `You are a legendary Master Angler, tournament fishing guide, and fisheries biologist with deep expertise in Pikeville, Kentucky and Fishtrap Lake (USACE reservoir on the Levisa Fork).
@@ -43,6 +47,8 @@ export function buildConditionsContext(conditions?: AnglerConditions): string {
 - Solunar Score: ${conditions.solunarScore ?? 'unavailable'}/100 (${conditions.solunarQuality || 'unavailable'})
 - Moon Phase: ${conditions.moonPhase || 'unavailable'}
 - Inflow/Outflow: ${conditions.inflowOutflow || 'unavailable'}
+- Surface Frontal Analysis (NWS/WPC): ${conditions.frontalAnalysis || 'unavailable'}
+- NWS Forecast Discussion Excerpt: ${conditions.frontalDiscussion || 'unavailable'}
 - Target Species: ${conditions.targetSpecies || 'Bass, Crappie, Panfish, Catfish, Freshwater Stripers'}`;
 }
 

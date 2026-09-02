@@ -1,4 +1,5 @@
 import { CurrentWeather, HourlyForecastItem, LocationInfo, PressureTrend, SolunarData, TideData } from '../types';
+import { FrontalSeries } from './weatherFronts';
 
 export const FISHTRAP_LAKE_LOCATION: LocationInfo = {
   name: 'Fishtrap Lake',
@@ -18,9 +19,10 @@ export async function fetchWeatherData(
   current: CurrentWeather;
   hourly: HourlyForecastItem[];
   tides: TideData;
+  frontalSeries?: FrontalSeries;
 }> {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover&hourly=temperature_2m,precipitation_probability,weather_code,surface_pressure,wind_speed_10m,uv_index&daily=sunrise,sunset&timezone=auto&forecast_days=2`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover&hourly=temperature_2m,precipitation_probability,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index&daily=sunrise,sunset&timezone=auto&forecast_days=2`;
 
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Weather fetch failed: ${res.statusText}`);
@@ -158,10 +160,20 @@ function parseOpenMeteoData(data: any, solunar: SolunarData, location: LocationI
 
   const tides: TideData = generateTideSchedule(isCoastal, new Date());
 
+  const frontalSeries: FrontalSeries | undefined = hourly.time
+    ? {
+        times: hourly.time,
+        pressureHpa: hourly.surface_pressure || [],
+        windDirectionDeg: hourly.wind_direction_10m || [],
+        tempC: hourly.temperature_2m || [],
+      }
+    : undefined;
+
   return {
     current: currentWeather,
     hourly: hourlyItems,
     tides,
+    frontalSeries,
   };
 }
 
