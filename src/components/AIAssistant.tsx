@@ -27,6 +27,8 @@ import {
 import Markdown from 'react-markdown';
 import { CurrentWeather, LocationInfo, SolunarData, UnitSystem } from '../types';
 import { LakeHydrologyData, FISHTRAP_LAKE_HYDROLOGY } from '../utils/lakeHydrology';
+import { FrontsData, summarizeFronts } from '../utils/weatherFronts';
+import { FrontOutlookNote } from './FrontOutlookNote';
 import {
   SyncedChatMessage,
   getLocalChatHistory,
@@ -50,6 +52,8 @@ interface AIAssistantProps {
   solunar: SolunarData;
   unitSystem: UnitSystem;
   hydrology?: LakeHydrologyData;
+  fronts?: FrontsData;
+  isLoadingFronts?: boolean;
 }
 
 export const AIAssistant: React.FC<AIAssistantProps> = ({
@@ -58,6 +62,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   solunar,
   unitSystem,
   hydrology = FISHTRAP_LAKE_HYDROLOGY,
+  fronts,
+  isLoadingFronts = false,
 }) => {
   const waterTempDisplay = hydrology.waterTempF > 0
     ? `${hydrology.waterTempF.toFixed(1)}°F`
@@ -176,6 +182,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
         solunarBestTimes: bestTimesCombined,
         targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
+        frontalAnalysis: summarizeFronts(fronts),
+        frontalDiscussion: fronts?.discussion,
       });
 
       if (error) {
@@ -440,6 +448,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 {weatherStatement}
               </p>
             </div>
+
+            {/* AI reading of the surface frontal analysis */}
+            <FrontOutlookNote
+              fronts={fronts}
+              weather={weather}
+              isLoadingFronts={isLoadingFronts}
+            />
           </div>
 
           {/* B. SOLUNAR BEST TIMES FOR TODAY CARD */}

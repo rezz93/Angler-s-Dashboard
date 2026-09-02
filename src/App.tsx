@@ -18,6 +18,13 @@ import { calculateSolunar } from './utils/solunar';
 import { fetchWeatherData, FISHTRAP_LAKE_LOCATION } from './utils/weather';
 import { getComputedSpeciesList } from './utils/speciesData';
 import { FISHTRAP_LAKE_HYDROLOGY, fetchFishtrapHydrology, LakeHydrologyData } from './utils/lakeHydrology';
+import { WeatherFrontsPanel } from './components/WeatherFrontsPanel';
+import {
+  FrontalSeries,
+  FrontsData,
+  fetchFrontsData,
+  getCachedFrontsData,
+} from './utils/weatherFronts';
 import {
   CatchRecord,
   CurrentWeather,
@@ -114,6 +121,11 @@ export default function App() {
   const [isLoadingWeather, setIsLoadingWeather] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
+  const [frontalSeries, setFrontalSeries] = useState<FrontalSeries | undefined>(undefined);
+  const [frontsData, setFrontsData] = useState<FrontsData | undefined>(() => getCachedFrontsData());
+  const [isLoadingFronts, setIsLoadingFronts] = useState(true);
+  const [frontsReloadToken, setFrontsReloadToken] = useState(0);
+
   // Chrome PC Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -190,11 +202,15 @@ export default function App() {
       setIsLoadingWeather(true);
       setWeatherError(null);
       try {
-        const { current, hourly, tides } = await fetchWeatherData(currentLocation, solunarData);
+        const { current, hourly, tides, frontalSeries: series } = await fetchWeatherData(
+          currentLocation,
+          solunarData,
+        );
         if (!isCancelled) {
           setCurrentWeather(current);
           setHourlyForecast(hourly);
           setTideData(tides);
+          setFrontalSeries(series);
         }
       } catch (err: any) {
         if (!isCancelled) {
@@ -212,6 +228,32 @@ export default function App() {
       isCancelled = true;
     };
   }, [currentLocation, selectedDate]);
+
+  // Surface frontal analysis (WPC coded bulletin + NWS discussion), refreshed hourly.
+  useEffect(() => {
+    const controller = new AbortController();
+    let isCancelled = false;
+
+    setIsLoadingFronts(true);
+    fetchFrontsData({ lat: currentLocation.lat, lon: currentLocation.lon }, frontalSeries, controller.signal)
+      .then((data) => {
+        if (!isCancelled) setFrontsData(data);
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingFronts(false);
+      });
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [currentLocation.lat, currentLocation.lon, frontalSeries, frontsReloadToken]);
+
+  useEffect(() => {
+    // WPC issues the surface bulletin roughly every 3 hours.
+    const timer = window.setInterval(() => setFrontsReloadToken((n) => n + 1), 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Species ratings computed dynamically
   const computedSpecies = useMemo(() => {
@@ -449,6 +491,14 @@ export default function App() {
                   unitSystem={unitSystem}
                 />
 
+                {/* Surface Fronts & Air Mass (with small WPC front map) */}
+                <WeatherFrontsPanel
+                  fronts={frontsData}
+                  isLoading={isLoadingFronts}
+                  weather={currentWeather}
+                  onRefresh={() => setFrontsReloadToken((n) => n + 1)}
+                />
+
                 {/* Live Doppler Weather Radar Panel */}
                 <WeatherRadarPanel location={currentLocation} />
 
@@ -518,6 +568,8 @@ export default function App() {
                 solunar={solunarData}
                 unitSystem={unitSystem}
                 hydrology={hydrologyData}
+                fronts={frontsData}
+                isLoadingFronts={isLoadingFronts}
               />
             )}
 
