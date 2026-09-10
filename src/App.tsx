@@ -15,7 +15,12 @@ import { AndroidQRView } from './components/AndroidQRView';
 import { AIAssistant } from './components/AIAssistant';
 import { AIOverviewBriefing } from './components/AIOverviewBriefing';
 import { calculateSolunar } from './utils/solunar';
-import { fetchWeatherData, FISHTRAP_LAKE_LOCATION } from './utils/weather';
+import {
+  fetchWeatherData,
+  FISHTRAP_LAKE_LOCATION,
+  PAST_DAYS_AVAILABLE,
+  FORECAST_DAYS_AVAILABLE,
+} from './utils/weather';
 import { getComputedSpeciesList } from './utils/speciesData';
 import { FISHTRAP_LAKE_HYDROLOGY, fetchFishtrapHydrology, LakeHydrologyData } from './utils/lakeHydrology';
 import { WeatherFrontsPanel } from './components/WeatherFrontsPanel';
@@ -205,6 +210,7 @@ export default function App() {
         const { current, hourly, tides, frontalSeries: series } = await fetchWeatherData(
           currentLocation,
           solunarData,
+          selectedDate,
         );
         if (!isCancelled) {
           setCurrentWeather(current);
@@ -286,6 +292,8 @@ export default function App() {
         currentLocation={currentLocation}
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
+        minOffsetDays={-PAST_DAYS_AVAILABLE}
+        maxOffsetDays={FORECAST_DAYS_AVAILABLE - 1}
         unitSystem={unitSystem}
         onToggleUnits={() =>
           setUnitSystem((prev) => (prev === 'imperial' ? 'metric' : 'imperial'))
@@ -337,6 +345,7 @@ export default function App() {
                   location={currentLocation}
                   weather={currentWeather}
                   solunar={solunarData}
+                  selectedDate={selectedDate}
                   unitSystem={unitSystem}
                   hydrology={hydrologyData}
                   onOpenFullAdvisor={() => setActiveTab('ai')}
@@ -353,7 +362,11 @@ export default function App() {
                             <CloudSun className="w-4 h-4" />
                           </div>
                           <h3 className="text-sm font-black text-slate-100 uppercase tracking-wide">
-                            {currentWeather.isSimulated ? 'Conditions & Solunar' : 'Live Conditions & Solunar'}
+                            {currentWeather.isForecast
+                              ? 'Forecast Conditions & Solunar'
+                              : currentWeather.isSimulated
+                                ? 'Conditions & Solunar'
+                                : 'Live Conditions & Solunar'}
                           </h3>
                         </div>
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
@@ -381,6 +394,12 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+
+                      {currentWeather.isForecast && (
+                        <p className="mt-3 text-[10px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded-xl px-2.5 py-1.5">
+                          Forecast for {selectedDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })} (midday values) — not current observations.
+                        </p>
+                      )}
 
                       {currentWeather.isSimulated && (
                         <p className="mt-3 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1.5">
@@ -502,6 +521,7 @@ export default function App() {
                   fronts={frontsData}
                   isLoading={isLoadingFronts}
                   weather={currentWeather}
+                  selectedDate={selectedDate}
                   onRefresh={() => setFrontsReloadToken((n) => n + 1)}
                 />
 
@@ -512,6 +532,7 @@ export default function App() {
                 <HourlyForecast
                   hourly={hourlyForecast}
                   unitSystem={unitSystem}
+                  selectedDate={selectedDate}
                 />
 
                 {/* 4-Panel Environmental Gauges */}
@@ -532,6 +553,7 @@ export default function App() {
                   <HourlyForecast
                     hourly={hourlyForecast}
                     unitSystem={unitSystem}
+                    selectedDate={selectedDate}
                   />
                   <EnvironmentalPanel
                     weather={currentWeather}
@@ -576,6 +598,7 @@ export default function App() {
                 hydrology={hydrologyData}
                 fronts={frontsData}
                 isLoadingFronts={isLoadingFronts}
+                selectedDate={selectedDate}
               />
             )}
 

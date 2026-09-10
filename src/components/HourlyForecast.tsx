@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sun,
   SunMedium,
@@ -21,16 +21,24 @@ import { HourlyForecastItem, UnitSystem } from '../types';
 interface HourlyForecastProps {
   hourly: HourlyForecastItem[];
   unitSystem: UnitSystem;
+  /** Day these hours describe; drives whether the current hour is meaningful. */
+  selectedDate?: Date;
 }
 
 export const HourlyForecast: React.FC<HourlyForecastProps> = ({
   hourly,
   unitSystem,
+  selectedDate = new Date(),
 }) => {
-  const [selectedHourIdx, setSelectedHourIdx] = useState<number>(() => {
-    const currentHour = new Date().getHours();
-    return Math.min(currentHour, hourly.length - 1);
-  });
+  const isToday = new Date().toDateString() === selectedDate.toDateString();
+  // On another day there is no "now", so the timeline opens at first light instead.
+  const defaultHourIdx = Math.min(isToday ? new Date().getHours() : 6, Math.max(0, hourly.length - 1));
+  const [selectedHourIdx, setSelectedHourIdx] = useState<number>(defaultHourIdx);
+
+  useEffect(() => {
+    setSelectedHourIdx(defaultHourIdx);
+    // Re-anchor whenever the day (and therefore the hour set) changes.
+  }, [selectedDate.toDateString(), hourly.length]);
 
   const selectedItem = hourly[selectedHourIdx] || hourly[0];
 
@@ -71,7 +79,9 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-emerald-400" />
           <h2 className="text-base font-bold text-slate-100">
-            24-Hour Fishing Bite & Weather Forecast
+            {isToday
+              ? '24-Hour Fishing Bite & Weather Forecast'
+              : `Bite & Weather Forecast — ${selectedDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}`}
           </h2>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-400">
