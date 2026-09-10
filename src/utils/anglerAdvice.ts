@@ -19,6 +19,8 @@ export interface AnglerConditions {
   moonPhase?: string;
   solunarBestTimes?: string;
   targetSpecies?: string;
+  /** Where the rest of the selected day is heading: rain timing, temperature swing, wind shift. */
+  forecastTrend?: string;
   /** Nearest analysed surface boundary, from the WPC coded surface bulletin. */
   frontalAnalysis?: string;
   /** Front-related sentences from the local NWS forecast discussion. */
@@ -49,6 +51,7 @@ export function buildConditionsContext(conditions?: AnglerConditions): string {
 - Official USACE Lake Water Temp: ${conditions.waterTemp || 'unavailable'}
 - Expected Weather: ${conditions.weather || 'unavailable'}, Air Temp: ${conditions.airTemp || 'unavailable'}
 - Barometric Pressure: ${conditions.pressure || 'unavailable'} (${conditions.pressureTrend || 'steady'})
+- Forecast Trend for the Day: ${conditions.forecastTrend || 'unavailable'}
 - Wind: ${conditions.windSpeed || 'unavailable'} from ${conditions.windDirection || 'unavailable'}
 - Pool Elevation: ${conditions.poolElevation || 'unavailable'}
 - Solunar Best Times for Today: ${conditions.solunarBestTimes || 'unavailable'}
@@ -61,7 +64,8 @@ export function buildConditionsContext(conditions?: AnglerConditions): string {
     conditions.dataNotice ? `\n- Data Notice: ${conditions.dataNotice}` : ''
   }
 
-Use only the facts above. Keep every tactic consistent with the date and season stated, and never describe a front, arrival time, or water temperature that is not listed.`;
+Use only the facts above. Keep every tactic consistent with the date and season stated, and never describe a front, arrival time, or water temperature that is not listed.
+The barometer, the forecast trend and the frontal analysis must agree in your answer: a falling barometer with rain in the trend is a pre-frontal feeding window, a falling barometer with a colder air mass is a cooling push, and a departed boundary is post-frontal air. Never call it a bluebird high-pressure day when rain or a boundary is in the facts above.`;
 }
 
 export function generateHeuristicAdvice(prompt: string, conditions?: AnglerConditions): string {

@@ -29,6 +29,7 @@ import {
 } from '../utils/aiChatStore';
 import { requestAnglerAdvice } from '../utils/geminiAdvice';
 import { getSeasonContext } from '../utils/season';
+import { summarizeDayOutlook } from '../utils/weather';
 
 interface AIOverviewBriefingProps {
   location: LocationInfo;
@@ -133,6 +134,7 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
         moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
         solunarBestTimes: bestTimesCombined,
         weather: weather.weatherDescription,
+        forecastTrend: summarizeDayOutlook(weather, isToday) || undefined,
         targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
         date: seasonContext.dateLabel,
         season: `${seasonContext.label} — ${seasonContext.phase}`,

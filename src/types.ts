@@ -13,6 +13,26 @@ export interface LocationInfo {
 
 export type PressureTrend = 'rising_fast' | 'rising' | 'steady' | 'falling' | 'falling_fast';
 
+/**
+ * How the selected day actually plays out, so advice follows the forecast track
+ * rather than the single sampled hour: when rain arrives, which way the
+ * temperature moved against the previous day, and whether the wind backs around.
+ */
+export interface DayOutlook {
+  highF: number;
+  lowF: number;
+  /** Measurable rain falling at the sampled hour. */
+  rainNow: boolean;
+  /** Highest precipitation probability still ahead on the selected day. */
+  maxPrecipProb: number;
+  /** First run of hours at or above a 40% chance, if any remain. */
+  precipWindow?: { startLabel: string; endLabel: string; peakProb: number };
+  /** Selected day's mean temperature minus the previous day's, in °F. */
+  tempVsPrevDayF?: number;
+  /** Compass shift from the sampled hour to the end of the day, when it veers. */
+  windShiftText?: string;
+}
+
 export interface CurrentWeather {
   time: string;
   temp: number;
@@ -42,6 +62,8 @@ export interface CurrentWeather {
   isForecast?: boolean;
   /** Lake-local calendar day (YYYY-MM-DD) these values describe. */
   dateKey?: string;
+  /** Trend of the whole selected day, not just the sampled hour. */
+  outlook?: DayOutlook;
 }
 
 export interface HourlyForecastItem {
