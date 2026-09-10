@@ -12,7 +12,14 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { CurrentWeather } from '../types';
-import { FrontsData, FRONT_MAP_IMAGE, FRONT_MAP_PAGE } from '../utils/weatherFronts';
+import { FrontMotion, FrontsData, FRONT_MAP_IMAGE, FRONT_MAP_PAGE } from '../utils/weatherFronts';
+
+/** Fronts track west to east, so bearing tells the angler whether it still matters. */
+const motionCopy: Record<FrontMotion, string> = {
+  approaching: 'Approaching Fishtrap Lake',
+  passing: 'Draped across the region',
+  departing: 'Already past — post-frontal air',
+};
 
 interface WeatherFrontsPanelProps {
   fronts?: FrontsData;
@@ -38,6 +45,9 @@ function relativeAge(iso?: string): string {
 
 function frontTactics(weather: CurrentWeather, fronts?: FrontsData): string {
   const trend = weather.pressureTrend;
+  if (fronts?.nearest?.motion === 'departing') {
+    return 'The boundary has already cleared east: post-frontal air mass with high, bluebird pressure. Fish tight to cover with slow presentations — Ned rigs, jigs, drop shots — and expect a short morning window.';
+  }
   if (fronts?.status === 'ok' && trend.includes('falling')) {
     return 'Pre-frontal falling barometer: fish feed hard and shallow. Cover water with chatterbaits, spinnerbaits, and lipless cranks on windward points until the boundary arrives.';
   }
@@ -141,28 +151,28 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-slate-950/80 border border-sky-500/30 rounded-2xl p-3.5">
             <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              Nearest Boundary
+              Relevant Boundary
             </div>
             <div className="text-base font-black text-sky-300 mt-1">
-              {hasFront ? fronts!.nearest!.label : 'None within 400 mi'}
+              {hasFront ? fronts!.nearest!.label : 'None inbound within 400 mi'}
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {hasFront
-                ? `${fronts!.frontsNearbyCount} analyzed front${fronts!.frontsNearbyCount === 1 ? '' : 's'} in range`
-                : 'Air mass conditions overhead'}
+                ? `${fronts!.frontsNearbyCount} analyzed front${fronts!.frontsNearbyCount === 1 ? '' : 's'} inbound or still influencing`
+                : 'Air mass conditions overhead; anything east has already passed'}
             </p>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5">
             <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
               <Navigation className="w-3 h-3 text-teal-400" />
-              Distance & Bearing
+              Distance & Track
             </div>
             <div className="text-base font-black text-slate-100 mt-1">
               {hasFront ? `${fronts!.nearest!.distanceMi} mi ${fronts!.nearest!.bearingText}` : '—'}
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {hasFront ? 'From Fishtrap Lake (±1° analysis grid)' : 'No boundary to measure'}
+              {hasFront ? `${motionCopy[fronts!.nearest!.motion]} (±1° analysis grid)` : 'No boundary to measure'}
             </p>
           </div>
 

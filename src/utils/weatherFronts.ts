@@ -22,12 +22,19 @@ export interface FrontBoundary {
   points: FrontPoint[];
 }
 
+/**
+ * Where the boundary sits relative to the lake in the prevailing west-to-east flow:
+ * one to the west is still inbound, one to the east has already gone through.
+ */
+export type FrontMotion = 'approaching' | 'passing' | 'departing';
+
 export interface NearestFront {
   type: FrontType;
   label: string;
   distanceMi: number;
   bearingDeg: number;
   bearingText: string;
+  motion: FrontMotion;
 }
 
 export interface PressureCenter {
@@ -61,7 +68,7 @@ export interface FrontsData {
   fetchedAt: string;
   isStale: boolean;
   nearest?: NearestFront;
-  /** True fronts (not troughs) analysed within the search radius. */
+  /** True fronts (not troughs) that are inbound or still influencing the lake. */
   frontsNearbyCount: number;
   pressureCenter?: PressureCenter;
   passage?: FrontalPassage;
@@ -76,8 +83,14 @@ export const FRONT_MAP_IMAGE = 'https://www.wpc.ncep.noaa.gov/noaa/noaad1.gif';
 export const FRONT_MAP_PAGE = 'https://www.wpc.ncep.noaa.gov/national_forecast/natfcst.php?day=1';
 
 const API_ROOT = 'https://api.weather.gov';
-const CACHE_KEY = 'anglers_weather_fronts_v1';
+// v2 adds NearestFront.motion; a v1 cache entry would render without it.
+const CACHE_KEY = 'anglers_weather_fronts_v2';
 const SEARCH_RADIUS_MI = 400;
+/**
+ * A boundary east of the lake has already passed; beyond this range its air mass no
+ * longer drives the local bite, so it is not reported as the relevant front.
+ */
+const DEPARTED_RELEVANT_MI = 150;
 const STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
 const FRONT_LABELS: Record<FrontType, string> = {
@@ -198,6 +211,16 @@ function nearestOnBoundary(origin: FrontPoint, boundary: FrontBoundary) {
   return best;
 }
 
+/** Fronts track roughly west to east, so bearing decides inbound vs. already gone. */
+function motionFor(deg: number): FrontMotion {
+  // East half (NE through SE): the boundary has already gone by.
+  if (deg > 45 && deg < 135) return 'departing';
+  // West half (SW through NW): still inbound.
+  if (deg > 225 && deg < 315) return 'approaching';
+  // Due north or south: draped across the region, neither in nor out yet.
+  return 'passing';
+}
+
 export function findNearestFront(
   origin: FrontPoint,
   boundaries: FrontBoundary[],
@@ -208,21 +231,31 @@ export function findNearestFront(
   for (const boundary of boundaries) {
     const { distanceMi, point } = nearestOnBoundary(origin, boundary);
     if (distanceMi > SEARCH_RADIUS_MI) continue;
+
+    const deg = bearingDeg(origin, point);
+    const motion = motionFor(deg);
+    // A boundary well east of the lake is behind the weather and irrelevant here.
+    if (motion === 'departing' && distanceMi > DEPARTED_RELEVANT_MI) continue;
+
     if (boundary.type !== 'TROF') frontsNearbyCount += 1;
 
-    // True fronts outrank troughs; within the same class the closest one wins.
-    const rank = boundary.type === 'TROF' ? 1 : 0;
-    const currentRank = nearest ? (nearest.type === 'TROF' ? 1 : 0) : 2;
+    // Inbound boundaries outrank ones already through, true fronts outrank troughs,
+    // and the closest wins only within the same class.
+    const rank = (motion === 'approaching' || motion === 'passing' ? 0 : 2) +
+      (boundary.type === 'TROF' ? 1 : 0);
+    const currentRank = nearest
+      ? (nearest.motion === 'departing' ? 2 : 0) + (nearest.type === 'TROF' ? 1 : 0)
+      : 99;
     if (rank > currentRank) continue;
     if (nearest && rank === currentRank && distanceMi >= nearest.distanceMi) continue;
 
-    const deg = bearingDeg(origin, point);
     nearest = {
       type: boundary.type,
       label: FRONT_LABELS[boundary.type],
       distanceMi: Math.round(distanceMi),
       bearingDeg: Math.round(deg),
       bearingText: toCompass(deg),
+      motion,
     };
   }
 
@@ -435,11 +468,17 @@ export async function fetchFrontsData(
 export function summarizeFronts(data?: FrontsData): string {
   if (!data || data.status === 'error') return 'Frontal analysis unavailable';
   if (data.status === 'none' || !data.nearest) {
-    return 'No analyzed frontal boundary within 400 mi';
+    return 'No approaching or locally influencing frontal boundary within 400 mi (any boundary east of the lake has already passed)';
   }
-  const { label, distanceMi, bearingText } = data.nearest;
+  const { label, distanceMi, bearingText, motion } = data.nearest;
+  const motionText =
+    motion === 'departing'
+      ? 'departing to the'
+      : motion === 'passing'
+        ? 'lying to the'
+        : 'approaching from the';
   const timing = data.passage
     ? `; modelled wind shift ${data.passage.startLabel}–${data.passage.endLabel}`
     : '';
-  return `${label} ${distanceMi} mi to the ${bearingText}${timing}`;
+  return `${label} ${distanceMi} mi ${motionText} ${bearingText}${timing}`;
 }

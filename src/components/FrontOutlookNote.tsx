@@ -25,7 +25,7 @@ interface CachedNote {
 }
 
 const FRONT_PROMPT_TODAY = `In 2 to 3 sentences, explain what the surface frontal analysis above means for fishing Fishtrap Lake in the next 24 hours.
-Rules: use only the frontal analysis, forecast discussion, barometer, and wind facts supplied in the conditions block. Never invent a front, a distance, or an arrival time. If the frontal analysis says no boundary is nearby or is unavailable, say that plainly and describe the air-mass pattern instead. Plain prose, no headings, no bullet points.`;
+Rules: use only the frontal analysis, forecast discussion, barometer, and wind facts supplied in the conditions block. Never invent a front, a distance, or an arrival time. Fronts here track west to east, so a boundary described as departing has already passed — call that post-frontal air and never describe it as inbound. If the frontal analysis says no boundary is nearby or is unavailable, say that plainly and describe the air-mass pattern instead. Plain prose, no headings, no bullet points.`;
 
 const FRONT_PROMPT_FORECAST = `In 2 to 3 sentences, explain what the forecast pressure and wind pattern above mean for fishing Fishtrap Lake on the forecast date in the conditions block.
 Rules: no surface frontal analysis exists for a future date, so never state that a front is analysed, name a boundary distance, or give an arrival time. Work only from the forecast barometer, wind, and sky values supplied, and say plainly that this is a forecast rather than an observed pattern. Plain prose, no headings, no bullet points.`;
@@ -60,6 +60,10 @@ function localFrontNote(
 
   const nearest = fronts?.status === 'ok' ? fronts.nearest : undefined;
 
+  if (nearest?.motion === 'departing') {
+    return `${summary}. ${observed}. The boundary is already east of the lake, so this is post-frontal air: expect a tight bite, slow finesse presentations on cover, and lean on the solunar windows rather than a weather push.`;
+  }
+
   if (nearest && nearest.distanceMi <= 150) {
     const passage = fronts?.passage
       ? ` The model series shows the wind shift and pressure minimum near ${fronts.passage.startLabel}–${fronts.passage.endLabel} (modelled, not an official arrival time).`
@@ -68,7 +72,7 @@ function localFrontNote(
   }
 
   if (nearest) {
-    return `${summary}. ${observed}. That boundary is too far away to drive today's bite, so play the air mass in place: fish the solunar windows and match the forage instead of waiting on a frontal push.`;
+    return `${summary}. ${observed}. That boundary is still too far out to drive today's bite, so play the air mass in place: fish the solunar windows and match the forage instead of waiting on a frontal push.`;
   }
 
   return `${summary}. ${observed}, so play the air mass: work solunar windows and match the forage rather than waiting on a weather-driven push.`;
