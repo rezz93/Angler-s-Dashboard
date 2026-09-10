@@ -29,6 +29,7 @@ import { CurrentWeather, LocationInfo, SolunarData, UnitSystem } from '../types'
 import { LakeHydrologyData, FISHTRAP_LAKE_HYDROLOGY } from '../utils/lakeHydrology';
 import { FrontsData, summarizeFronts } from '../utils/weatherFronts';
 import { getSeasonContext } from '../utils/season';
+import { summarizeDayOutlook } from '../utils/weather';
 import { FrontOutlookNote } from './FrontOutlookNote';
 import {
   SyncedChatMessage,
@@ -112,8 +113,21 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           ? ` A ${fronts?.nearest?.label.toLowerCase()} is about ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} and tracking this way, so treat this as front-influenced air.`
           : ` The nearest inbound boundary is still roughly ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} — far enough out that today's pressure change is air-mass driven rather than an imminent passage.`;
 
+  // The barometer alone is ambiguous: falling ahead of rain is a pre-frontal feed,
+  // falling with a colder air mass already arriving is not, so the forecast track
+  // decides the wording.
+  const outlook = weather.outlook;
+  const outlookSummary = summarizeDayOutlook(weather, isToday);
+  const rainComing = (outlook?.precipWindow?.peakProb ?? outlook?.maxPrecipProb ?? 0) >= 40;
+  const turningColder = (outlook?.tempVsPrevDayF ?? 0) <= -4;
+  const falling = weather.pressureTrend === 'falling' || weather.pressureTrend === 'falling_fast';
+
   const pressureAdvice =
-    weather.pressureTrend === 'falling' || weather.pressureTrend === 'falling_fast'
+    falling && (rainComing || outlook?.rainNow)
+      ? `A ${weather.pressureTrend === 'falling_fast' ? 'sharply falling' : 'falling'} barometer with rain moving in is the classic pre-frontal window: fish hard before the first bands arrive, running spinnerbaits, squarebill crankbaits and chatterbaits across windward points and secondary channel cuts, then follow the fish shallower as the sky darkens.`
+      : falling && turningColder
+      ? `The barometer is ${weather.pressureTrend === 'falling_fast' ? 'falling fast' : 'falling'}, but the air mass is also ${Math.abs(outlook!.tempVsPrevDayF!)}°F colder than the previous day, so treat this as a cooling push rather than a warm pre-frontal surge: keep reaction baits in the rotation but slow the cadence and work the first drop off the banks.`
+      : falling
       ? `A ${weather.pressureTrend === 'falling_fast' ? 'sharply falling' : 'falling'} barometer generally widens the feeding window. Work reaction lures (spinnerbaits, squarebill crankbaits, chatterbaits) across windward points and secondary channel cuts.`
       : weather.pressureTrend === 'rising' || weather.pressureTrend === 'rising_fast'
       ? `${weather.pressureTrend === 'rising_fast' ? 'Sharply rising' : 'Rising'} pressure typically holds fish tighter to deep bottom structure, dock pilings, and shaded bluff walls. Downsize to finesse jigs, drop shot rigs, and Ned rigs with subtle cadences.`
@@ -125,7 +139,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
       : weather.isForecast
       ? `These are forecast values for ${seasonContext.dateLabel} (sampled early afternoon), not current observations. `
       : ''
-  }Tactical Atmospheric Assessment for ${currentLocation.name} on ${seasonContext.dateLabel} (${seasonContext.label}): ${weather.weatherDescription} with ambient air temperature at ${weather.temp}°F (feels like ${weather.feelsLike}°F) and ${weather.humidity}% humidity. Wind is from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Sea-level barometric pressure registers ${weather.pressureInHg.toFixed(2)} inHg (${weather.pressureTrend.replace('_', ' ')}, ${weather.pressureDelta6h} hPa over 6 h). Seasonal pattern: ${seasonContext.phase}. ${pressureAdvice}${frontClause}`;
+  }Tactical Atmospheric Assessment for ${currentLocation.name} on ${seasonContext.dateLabel} (${seasonContext.label}): ${weather.weatherDescription} with ambient air temperature at ${weather.temp}°F (feels like ${weather.feelsLike}°F) and ${weather.humidity}% humidity. Wind is from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Sea-level barometric pressure registers ${weather.pressureInHg.toFixed(2)} inHg (${weather.pressureTrend.replace('_', ' ')}, ${weather.pressureDelta6h} hPa over 6 h). Seasonal pattern: ${seasonContext.phase}. ${outlookSummary ? `${outlookSummary} ` : ''}${pressureAdvice}${frontClause}`;
 
   // Solunar Statement Builder
   const solunarStatement = `${isToday ? "Today's" : `The ${seasonContext.dateLabel}`} Solunar Bite Rating is rated ${solunar.ratingScore}/100 (${solunar.overallQuality} Activity) under a ${solunar.moonPhaseName} (${solunar.moonIllumination}% illumination). Prime feeding windows for ${dayWord} are concentrated during Major Periods: ${
@@ -210,6 +224,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         moonPhase: `${solunar.moonPhaseName} (${solunar.moonIllumination}%)`,
         solunarBestTimes: bestTimesCombined,
         targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
+        forecastTrend: outlookSummary || undefined,
         frontalAnalysis: frontContext,
         frontalDiscussion: fronts?.discussion,
         date: seasonContext.dateLabel,

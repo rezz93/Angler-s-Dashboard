@@ -45,6 +45,19 @@ function relativeAge(iso?: string): string {
 
 function frontTactics(weather: CurrentWeather, fronts?: FrontsData): string {
   const trend = weather.pressureTrend;
+  const outlook = weather.outlook;
+  const wet =
+    outlook?.rainNow === true ||
+    (outlook?.precipWindow?.peakProb ?? outlook?.maxPrecipProb ?? 0) >= 40;
+
+  // The hourly forecast overrides the boundary geometry: rain on the way is not a
+  // settled high-pressure day, whichever side of the lake the analysed front sits on.
+  if (wet) {
+    const when = outlook?.precipWindow
+      ? ` (${outlook.precipWindow.startLabel}–${outlook.precipWindow.endLabel}, up to ${outlook.precipWindow.peakProb}%)`
+      : '';
+    return `Rain is in the hourly forecast${when}, so treat this as unsettled rather than settled air: cover water with chatterbaits, spinnerbaits, and lipless cranks on windward points ahead of it, then slow to jigs and finesse plastics on cover once it moves through.`;
+  }
   if (fronts?.nearest?.motion === 'departing') {
     return 'The boundary has already cleared east: post-frontal air mass with high, bluebird pressure. Fish tight to cover with slow presentations — Ned rigs, jigs, drop shots — and expect a short morning window.';
   }

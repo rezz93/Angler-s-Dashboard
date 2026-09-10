@@ -4,6 +4,7 @@ import { Wind, Loader2, RefreshCw, CircleSlash } from 'lucide-react';
 import { CurrentWeather } from '../types';
 import { FrontsData, summarizeFronts } from '../utils/weatherFronts';
 import { getSeasonContext } from '../utils/season';
+import { summarizeDayOutlook } from '../utils/weather';
 import { requestAnglerAdvice, AdviceSource } from '../utils/geminiAdvice';
 
 interface FrontOutlookNoteProps {
@@ -25,10 +26,10 @@ interface CachedNote {
 }
 
 const FRONT_PROMPT_TODAY = `In 2 to 3 sentences, explain what the surface frontal analysis above means for fishing Fishtrap Lake in the next 24 hours.
-Rules: use only the frontal analysis, forecast discussion, barometer, and wind facts supplied in the conditions block. Never invent a front, a distance, or an arrival time. Fronts here track west to east, so a boundary described as departing has already passed — call that post-frontal air and never describe it as inbound. If the frontal analysis says no boundary is nearby or is unavailable, say that plainly and describe the air-mass pattern instead. Plain prose, no headings, no bullet points.`;
+Rules: use only the frontal analysis, forecast trend, forecast discussion, barometer, and wind facts supplied in the conditions block. Never invent a front, a distance, or an arrival time. Fronts here track west to east, so a boundary described as departing has already passed — call that post-frontal air and never describe it as inbound. Your reading must match the forecast trend line: if it lists rain chances or a colder air mass, say so and do not call the day settled or bluebird. If the frontal analysis says no boundary is nearby or is unavailable, say that plainly and describe the air-mass pattern instead. Plain prose, no headings, no bullet points.`;
 
 const FRONT_PROMPT_FORECAST = `In 2 to 3 sentences, explain what the forecast pressure and wind pattern above mean for fishing Fishtrap Lake on the forecast date in the conditions block.
-Rules: no surface frontal analysis exists for a future date, so never state that a front is analysed, name a boundary distance, or give an arrival time. Work only from the forecast barometer, wind, and sky values supplied, and say plainly that this is a forecast rather than an observed pattern. Plain prose, no headings, no bullet points.`;
+Rules: no surface frontal analysis exists for a future date, so never state that a front is analysed, name a boundary distance, or give an arrival time. Work only from the forecast barometer, wind, sky and forecast-trend values supplied, keeping your reading consistent with the rain chances and temperature change in that trend, and say plainly that this is a forecast rather than an observed pattern. Plain prose, no headings, no bullet points.`;
 
 /**
  * Composed locally when no AI backend or key is reachable, so the note states the same
@@ -41,6 +42,7 @@ function localFrontNote(
   dateLabel: string,
 ): string {
   const trend = weather.pressureTrend.replace('_', ' ');
+  const dayTrend = summarizeDayOutlook(weather, isToday);
 
   if (!isToday) {
     const forecast = `Forecast for ${dateLabel} has the barometer near ${weather.pressureInHg} inHg and ${trend} (${weather.pressureDelta6h} hPa over 6 h), with wind from the ${weather.windDirectionText} at ${weather.windSpeed} mph under ${weather.weatherDescription.toLowerCase()}`;
@@ -50,7 +52,7 @@ function localFrontNote(
         : weather.pressureTrend === 'rising' || weather.pressureTrend === 'rising_fast'
           ? 'rising pressure points to a settled post-system air mass, so plan on finesse presentations and deeper structure'
           : 'a flat pressure profile points to a stable air mass, so plan around the solunar windows and forage rather than a weather push';
-    return `${forecast}. No surface frontal analysis is issued for a future date, so nothing here is an analysed boundary — ${tactic}.`;
+    return `${forecast}. ${dayTrend} No surface frontal analysis is issued for a future date, so nothing here is an analysed boundary — ${tactic}.`;
   }
 
   const summary = summarizeFronts(fronts);
@@ -59,23 +61,33 @@ function localFrontNote(
     : `Local barometer is ${weather.pressureInHg} inHg and ${trend}, with wind from the ${weather.windDirectionText} at ${weather.windSpeed} mph`;
 
   const nearest = fronts?.status === 'ok' ? fronts.nearest : undefined;
+  const outlook = weather.outlook;
+  const trendLine = dayTrend;
+  const rainComing = (outlook?.precipWindow?.peakProb ?? outlook?.maxPrecipProb ?? 0) >= 40;
+  const wet = rainComing || outlook?.rainNow === true;
+
+  // Rain on the way outranks the boundary geometry: an unsettled sky is not a
+  // post-frontal bluebird day, whichever side of the lake the front sits on.
+  if (wet) {
+    return `${summary}. ${observed}. ${trendLine} Unsettled, falling-light conditions like that usually pull fish shallower and widen the window, so work reaction baits on windward points and creek mouths ahead of the heaviest rain, then slide to slower presentations on cover once it moves through.`;
+  }
 
   if (nearest?.motion === 'departing') {
-    return `${summary}. ${observed}. The boundary is already east of the lake, so this is post-frontal air: expect a tight bite, slow finesse presentations on cover, and lean on the solunar windows rather than a weather push.`;
+    return `${summary}. ${observed}. ${trendLine} The boundary is already east of the lake, so this is post-frontal air: expect a tight bite, slow finesse presentations on cover, and lean on the solunar windows rather than a weather push.`;
   }
 
   if (nearest && nearest.distanceMi <= 150) {
     const passage = fronts?.passage
       ? ` The model series shows the wind shift and pressure minimum near ${fronts.passage.startLabel}–${fronts.passage.endLabel} (modelled, not an official arrival time).`
       : '';
-    return `${summary}. ${observed}. With the boundary that close, fish reaction baits on windward structure while pressure is falling and slow down once it rises behind the front.${passage}`;
+    return `${summary}. ${observed}. ${trendLine} With the boundary that close, fish reaction baits on windward structure while pressure is falling and slow down once it rises behind the front.${passage}`;
   }
 
   if (nearest) {
-    return `${summary}. ${observed}. That boundary is still too far out to drive today's bite, so play the air mass in place: fish the solunar windows and match the forage instead of waiting on a frontal push.`;
+    return `${summary}. ${observed}. ${trendLine} That boundary is still too far out to drive today's bite, so play the air mass in place: fish the solunar windows and match the forage instead of waiting on a frontal push.`;
   }
 
-  return `${summary}. ${observed}, so play the air mass: work solunar windows and match the forage rather than waiting on a weather-driven push.`;
+  return `${summary}. ${observed}. ${trendLine} Play the air mass: work solunar windows and match the forage rather than waiting on a weather-driven push.`;
 }
 
 function cacheKeyFor(fronts?: FrontsData, weather?: CurrentWeather, waterTempF?: number): string {
@@ -85,6 +97,10 @@ function cacheKeyFor(fronts?: FrontsData, weather?: CurrentWeather, waterTempF?:
     fronts?.nearest?.label ?? 'no-front',
     fronts?.passage?.startLabel ?? 'no-passage',
     weather?.pressureTrend ?? 'steady',
+    // A changed rain/temperature track is a different briefing, even under the same front.
+    weather?.outlook?.precipWindow?.startLabel ?? 'no-rain-window',
+    weather?.outlook?.maxPrecipProb ?? 'no-precip',
+    weather?.outlook?.tempVsPrevDayF ?? 'no-temp-delta',
     // A different day (or a new water reading) is a different briefing entirely.
     weather?.dateKey ?? 'today',
     waterTempF ? waterTempF.toFixed(0) : 'no-water-temp',
@@ -128,6 +144,7 @@ export const FrontOutlookNote: React.FC<FrontOutlookNoteProps> = ({
           {
             location: 'Fishtrap Lake (Pikeville, KY, USA)',
             weather: weather.weatherDescription,
+            forecastTrend: summarizeDayOutlook(weather, isToday) || undefined,
             airTemp: `${weather.temp}°F`,
             pressure: `${weather.pressureInHg} inHg / ${weather.pressureHpa} hPa`,
             pressureTrend: `${weather.pressureTrend} (6h change ${weather.pressureDelta6h} hPa)`,

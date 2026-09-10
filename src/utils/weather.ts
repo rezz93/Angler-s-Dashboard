@@ -1,5 +1,13 @@
 import SunCalc from 'suncalc';
-import { CurrentWeather, HourlyForecastItem, LocationInfo, PressureTrend, SolunarData, TideData } from '../types';
+import {
+  CurrentWeather,
+  DayOutlook,
+  HourlyForecastItem,
+  LocationInfo,
+  PressureTrend,
+  SolunarData,
+  TideData,
+} from '../types';
 import { FrontalSeries } from './weatherFronts';
 
 interface OpenMeteoCurrent {
@@ -191,6 +199,23 @@ function parseOpenMeteoData(
     ? formatIsoTime(dailySun.sunset)
     : formatIsoTime(fallbackSun.sunset.toISOString(), location.timeZone);
 
+  const prevDayKey = localDateKey(
+    new Date(new Date(`${dayKey}T12:00`).getTime() - 24 * 60 * 60 * 1000),
+    location.timeZone,
+  );
+  const prevDayIndices = (hourly.time ?? [])
+    .map((t, i) => (t.startsWith(prevDayKey) ? i : -1))
+    .filter((i) => i >= 0);
+
+  const outlook = buildDayOutlook({
+    hourly,
+    dayIndices,
+    prevDayIndices,
+    sampleIdx,
+    isToday,
+    rainNow: precipitation > 0 || (weatherCode >= 51 && weatherCode !== 71),
+  });
+
   const currentWeather: CurrentWeather = {
     time: isToday
       ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -220,6 +245,7 @@ function parseOpenMeteoData(
     estimatedWaterClarity,
     isForecast: !isToday,
     dateKey: dayKey,
+    outlook,
   };
 
   // Build the selected day's 24 hours
@@ -285,6 +311,124 @@ function parseOpenMeteoData(
     tides,
     frontalSeries,
   };
+}
+
+/**
+ * One sentence describing where the day is heading, shared by the tactical
+ * statement, the AI prompt and the frontal outlook so they cannot disagree.
+ */
+export function summarizeDayOutlook(weather: CurrentWeather, isToday: boolean): string {
+  const o = weather.outlook;
+  if (!o) return '';
+  const parts: string[] = [];
+
+  if (o.rainNow) {
+    parts.push('rain is falling now');
+  }
+  if (o.precipWindow) {
+    parts.push(
+      `${o.precipWindow.startLabel === o.precipWindow.endLabel
+        ? `rain chances peak near ${o.precipWindow.startLabel}`
+        : `rain chances run ${o.precipWindow.startLabel}–${o.precipWindow.endLabel}`} at up to ${o.precipWindow.peakProb}%`,
+    );
+  } else if (o.maxPrecipProb >= 20) {
+    parts.push(`rain chances stay capped near ${o.maxPrecipProb}%`);
+  } else {
+    parts.push('no meaningful rain chance in the hourly forecast');
+  }
+
+  if (o.tempVsPrevDayF != null && Math.abs(o.tempVsPrevDayF) >= 4) {
+    parts.push(
+      `${Math.abs(o.tempVsPrevDayF)}°F ${o.tempVsPrevDayF < 0 ? 'colder' : 'warmer'} than the previous day`,
+    );
+  }
+  if (o.windShiftText) parts.push(`wind veering ${o.windShiftText}`);
+
+  const lead = isToday ? 'Rest of today' : 'Through the day';
+  return `${lead}: ${parts.join(', ')} (high ${o.highF}°F / low ${o.lowF}°F).`;
+}
+
+/**
+ * Reads the rest of the selected day out of the hourly series so the briefing can
+ * talk about what is coming (rain, a colder air mass, a wind shift) instead of
+ * only the hour it sampled.
+ */
+function buildDayOutlook({
+  hourly,
+  dayIndices,
+  prevDayIndices,
+  sampleIdx,
+  isToday,
+  rainNow,
+}: {
+  hourly: OpenMeteoHourly;
+  dayIndices: number[];
+  prevDayIndices: number[];
+  sampleIdx: number;
+  isToday: boolean;
+  rainNow: boolean;
+}): DayOutlook | undefined {
+  if (!dayIndices.length) return undefined;
+
+  const tempsC = dayIndices.map((i) => hourly.temperature_2m?.[i]).filter((v): v is number => v != null);
+  if (!tempsC.length) return undefined;
+  const toF = (c: number) => Math.round((c * 9) / 5 + 32);
+
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+  const prevTempsC = prevDayIndices
+    .map((i) => hourly.temperature_2m?.[i])
+    .filter((v): v is number => v != null);
+  const tempVsPrevDayF = prevTempsC.length
+    ? Math.round(((mean(tempsC) - mean(prevTempsC)) * 9) / 5)
+    : undefined;
+
+  // Today's spent hours no longer matter for planning; another day is read whole.
+  const aheadIndices = isToday ? dayIndices.filter((i) => i >= sampleIdx) : dayIndices;
+  const remaining = aheadIndices.length ? aheadIndices : dayIndices;
+  const probAt = (i: number) => Math.round(hourly.precipitation_probability?.[i] ?? 0);
+  const maxPrecipProb = remaining.reduce((max, i) => Math.max(max, probAt(i)), 0);
+
+  let precipWindow: DayOutlook['precipWindow'];
+  const startPos = remaining.findIndex((i) => probAt(i) >= 40);
+  if (startPos >= 0) {
+    let endPos = startPos;
+    while (endPos + 1 < remaining.length && probAt(remaining[endPos + 1]) >= 40) endPos += 1;
+    const window = remaining.slice(startPos, endPos + 1);
+    precipWindow = {
+      startLabel: hourLabelAt(hourly, window[0]),
+      endLabel: hourLabelAt(hourly, window[window.length - 1]),
+      peakProb: window.reduce((max, i) => Math.max(max, probAt(i)), 0),
+    };
+  }
+
+  const dirAt = (i: number) => hourly.wind_direction_10m?.[i];
+  const fromDir = dirAt(remaining[0]);
+  const toDir = dirAt(remaining[remaining.length - 1]);
+  const windShiftText =
+    fromDir != null && toDir != null && angleGap(fromDir, toDir) >= 45
+      ? `${getCompassDirection(fromDir)} → ${getCompassDirection(toDir)}`
+      : undefined;
+
+  return {
+    highF: toF(Math.max(...tempsC)),
+    lowF: toF(Math.min(...tempsC)),
+    rainNow,
+    maxPrecipProb,
+    precipWindow,
+    tempVsPrevDayF,
+    windShiftText,
+  };
+}
+
+function hourLabelAt(hourly: OpenMeteoHourly, index: number): string {
+  const raw = hourly.time?.[index];
+  if (!raw) return '';
+  return new Date(raw).toLocaleTimeString([], { hour: 'numeric' });
+}
+
+function angleGap(a: number, b: number): number {
+  const diff = Math.abs(((a - b) % 360 + 360) % 360);
+  return diff > 180 ? 360 - diff : diff;
 }
 
 function calculateHourlyBiteScore(
