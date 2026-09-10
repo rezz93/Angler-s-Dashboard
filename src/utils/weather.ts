@@ -19,11 +19,15 @@ interface OpenMeteoCurrent {
 interface OpenMeteoHourly {
   time?: string[];
   temperature_2m?: number[];
+  apparent_temperature?: number[];
+  relative_humidity_2m?: number[];
+  cloud_cover?: number[];
   precipitation_probability?: number[];
   weather_code?: number[];
   surface_pressure?: number[];
   pressure_msl?: number[];
   wind_speed_10m?: number[];
+  wind_gusts_10m?: number[];
   wind_direction_10m?: number[];
   uv_index?: number[];
 }
@@ -46,9 +50,31 @@ export const POPULAR_FISHING_LOCATIONS: LocationInfo[] = [
   FISHTRAP_LAKE_LOCATION,
 ];
 
+/** How far the date picker may roam, bounded by what Open-Meteo returns in one call. */
+export const PAST_DAYS_AVAILABLE = 3;
+export const FORECAST_DAYS_AVAILABLE = 7;
+
+/** Hour of day (0-23) as it reads at the water, not on the device. */
+export function localHour(date: Date, timeZone?: string): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hour12: false }).format(date),
+  );
+}
+
+/** Calendar day key (YYYY-MM-DD) as it reads at the water, not on the device. */
+export function localDateKey(date: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 export async function fetchWeatherData(
   location: LocationInfo,
-  solunar: SolunarData
+  solunar: SolunarData,
+  targetDate: Date = new Date(),
 ): Promise<{
   current: CurrentWeather;
   hourly: HourlyForecastItem[];
@@ -56,44 +82,75 @@ export async function fetchWeatherData(
   frontalSeries?: FrontalSeries;
 }> {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover&hourly=temperature_2m,precipitation_probability,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m,uv_index&daily=sunrise,sunset&timezone=auto&forecast_days=2`;
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${location.lat}&longitude=${location.lon}` +
+      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover` +
+      `&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,cloud_cover,precipitation_probability,weather_code,pressure_msl,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index` +
+      `&daily=sunrise,sunset&timezone=auto&past_days=${PAST_DAYS_AVAILABLE}&forecast_days=${FORECAST_DAYS_AVAILABLE}`;
 
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Weather fetch failed: ${res.statusText}`);
     const data = (await res.json()) as OpenMeteoResponse;
 
-    return parseOpenMeteoData(data, solunar, location);
+    return parseOpenMeteoData(data, solunar, location, targetDate);
   } catch (err) {
     console.warn('Using simulated fishing weather due to network limit:', err);
-    return generateSimulatedWeatherData(location, solunar);
+    return generateSimulatedWeatherData(location, solunar, targetDate);
   }
 }
 
-function parseOpenMeteoData(data: OpenMeteoResponse, solunar: SolunarData, location: LocationInfo) {
+function parseOpenMeteoData(
+  data: OpenMeteoResponse,
+  solunar: SolunarData,
+  location: LocationInfo,
+  targetDate: Date,
+) {
   const current: OpenMeteoCurrent = data.current || {};
   const hourly: OpenMeteoHourly = data.hourly || {};
   const daily = data.daily || {};
+  const hourlyPressure = hourly.pressure_msl ?? hourly.surface_pressure;
 
-  const tempC = current.temperature_2m ?? 20;
-  const windKph = current.wind_speed_10m ?? 0;
+  // Open-Meteo returns times already local to the lake, so the day is selected by
+  // string prefix rather than by re-deriving an offset.
+  const dayKey = localDateKey(targetDate, location.timeZone);
+  const todayKey = localDateKey(new Date(), location.timeZone);
+  const isToday = dayKey === todayKey;
+  const dayIndices = (hourly.time ?? [])
+    .map((t, i) => (t.startsWith(dayKey) ? i : -1))
+    .filter((i) => i >= 0);
+  const dayStart = dayIndices[0] ?? 0;
+
+  // Today reads from the observation block; any other day reads that day's forecast,
+  // sampled early afternoon so the headline reflects the fishable part of the day.
+  const sampleIdx = isToday
+    ? dayStart + localHour(new Date(), location.timeZone)
+    : dayStart + Math.min(14, Math.max(0, dayIndices.length - 1));
+  const sampleAt = <T,>(series: T[] | undefined): T | undefined => series?.[sampleIdx];
+
+  const tempC = (isToday ? current.temperature_2m : sampleAt(hourly.temperature_2m)) ?? 20;
+  const apparentC =
+    (isToday ? current.apparent_temperature : sampleAt(hourly.apparent_temperature)) ?? tempC;
+  const windKph = (isToday ? current.wind_speed_10m : sampleAt(hourly.wind_speed_10m)) ?? 0;
+  const gustKph = (isToday ? current.wind_gusts_10m : sampleAt(hourly.wind_gusts_10m)) ?? windKph * 1.3;
   const tempF = Math.round((tempC * 9) / 5 + 32);
-  const feelsLikeF = Math.round(((current.apparent_temperature ?? tempC) * 9) / 5 + 32);
+  const feelsLikeF = Math.round((apparentC * 9) / 5 + 32);
   const windMph = Math.round(windKph * 0.621371);
-  const windGustsMph = Math.round((current.wind_gusts_10m || windKph * 1.3) * 0.621371);
-  const windDeg = current.wind_direction_10m || 0;
+  const windGustsMph = Math.round(gustKph * 0.621371);
+  const windDeg = (isToday ? current.wind_direction_10m : sampleAt(hourly.wind_direction_10m)) ?? 0;
   // Sea-level pressure, so the reading matches a barometer and the WPC surface
   // analysis; station pressure at this elevation reads ~40 hPa lower.
-  const pressureHpa = Math.round(current.pressure_msl ?? current.surface_pressure ?? 1013);
+  const pressureHpa = Math.round(
+    (isToday ? current.pressure_msl ?? current.surface_pressure : sampleAt(hourlyPressure)) ?? 1013,
+  );
   const pressureInHg = +(pressureHpa * 0.02953).toFixed(2);
 
-  // Calculate 6-hour pressure change
-  const hourlyPressure = hourly.pressure_msl ?? hourly.surface_pressure;
+  // 6-hour pressure change leading up to the sampled hour
   let pressureDelta6h = 0;
   let pressureTrend: PressureTrend = 'steady';
-  if (hourlyPressure && hourlyPressure.length >= 12) {
-    const currentIdx = Math.min(new Date().getHours(), hourlyPressure.length - 1);
-    const pastIdx = Math.max(0, currentIdx - 6);
-    pressureDelta6h = +(hourlyPressure[currentIdx] - hourlyPressure[pastIdx]).toFixed(1);
+  if (hourlyPressure && hourlyPressure.length > 6) {
+    const endIdx = Math.min(sampleIdx, hourlyPressure.length - 1);
+    const startIdx = Math.max(0, endIdx - 6);
+    pressureDelta6h = +(hourlyPressure[endIdx] - hourlyPressure[startIdx]).toFixed(1);
 
     if (pressureDelta6h > 3) pressureTrend = 'rising_fast';
     else if (pressureDelta6h > 1) pressureTrend = 'rising';
@@ -102,26 +159,42 @@ function parseOpenMeteoData(data: OpenMeteoResponse, solunar: SolunarData, locat
     else pressureTrend = 'steady';
   }
 
-  const weatherCode = current.weather_code || 0;
+  const weatherCode = (isToday ? current.weather_code : sampleAt(hourly.weather_code)) ?? 0;
   const { description, icon } = getWeatherCodeDetails(weatherCode);
 
   const estimatedWaterTemp = estimateWaterTempF(tempF);
+  const precipitation = isToday ? current.precipitation ?? 0 : 0;
+  const precipitationProb = Math.round(sampleAt(hourly.precipitation_probability) ?? 10);
 
   // Water clarity approximation
   let estimatedWaterClarity: CurrentWeather['estimatedWaterClarity'] = 'Crystal Clear';
-  if (windMph > 18 || (current.precipitation && current.precipitation > 2)) {
+  if (windMph > 18 || precipitation > 2 || precipitationProb > 70) {
     estimatedWaterClarity = 'Muddy';
-  } else if (windMph > 10 || (current.precipitation && current.precipitation > 0.2)) {
+  } else if (windMph > 10 || precipitation > 0.2 || precipitationProb > 40) {
     estimatedWaterClarity = 'Murky';
   } else if (windMph > 6) {
     estimatedWaterClarity = 'Slightly Stained';
   }
 
-  const sunrise = daily.sunrise?.[0] ? formatIsoTime(daily.sunrise[0]) : '06:18 AM';
-  const sunset = daily.sunset?.[0] ? formatIsoTime(daily.sunset[0]) : '07:54 PM';
+  // Only the selected day's entry is usable; a miss must not silently fall back to
+  // another day's sun times.
+  const dailyIdx = (daily.sunrise ?? []).findIndex((t) => t.startsWith(dayKey));
+  const dailySun =
+    dailyIdx >= 0
+      ? { sunrise: daily.sunrise?.[dailyIdx], sunset: daily.sunset?.[dailyIdx] }
+      : { sunrise: undefined, sunset: undefined };
+  const fallbackSun = SunCalc.getTimes(targetDate, location.lat, location.lon);
+  const sunrise = dailySun.sunrise
+    ? formatIsoTime(dailySun.sunrise)
+    : formatIsoTime(fallbackSun.sunrise.toISOString(), location.timeZone);
+  const sunset = dailySun.sunset
+    ? formatIsoTime(dailySun.sunset)
+    : formatIsoTime(fallbackSun.sunset.toISOString(), location.timeZone);
 
   const currentWeather: CurrentWeather = {
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: isToday
+      ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : formatIsoTime(hourly.time?.[sampleIdx] ?? `${dayKey}T14:00`),
     temp: tempF,
     feelsLike: feelsLikeF,
     windSpeed: windMph,
@@ -132,10 +205,12 @@ function parseOpenMeteoData(data: OpenMeteoResponse, solunar: SolunarData, locat
     pressureInHg,
     pressureTrend,
     pressureDelta6h,
-    humidity: Math.round(current.relative_humidity_2m || 55),
-    uvIndex: Math.round(hourly.uv_index?.[new Date().getHours()] || 5),
-    cloudCover: Math.round(current.cloud_cover || 25),
-    precipitationProb: Math.round(hourly.precipitation_probability?.[new Date().getHours()] || 10),
+    humidity: Math.round(
+      (isToday ? current.relative_humidity_2m : sampleAt(hourly.relative_humidity_2m)) ?? 55,
+    ),
+    uvIndex: Math.round(sampleAt(hourly.uv_index) ?? 5),
+    cloudCover: Math.round((isToday ? current.cloud_cover : sampleAt(hourly.cloud_cover)) ?? 25),
+    precipitationProb,
     weatherCode,
     weatherDescription: description,
     weatherIconName: icon,
@@ -143,17 +218,18 @@ function parseOpenMeteoData(data: OpenMeteoResponse, solunar: SolunarData, locat
     sunset,
     estimatedWaterTemp,
     estimatedWaterClarity,
+    isForecast: !isToday,
+    dateKey: dayKey,
   };
 
-  // Build 24-hour forecast
+  // Build the selected day's 24 hours
   const hourlyItems: HourlyForecastItem[] = [];
-  const totalHours = Math.min(24, hourly.time?.length || 24);
 
-  for (let i = 0; i < totalHours; i++) {
+  for (const i of dayIndices.length ? dayIndices : [...Array(24).keys()]) {
     const rawTime = hourly.time?.[i];
     const hourDate = rawTime ? new Date(rawTime) : new Date();
     const hourLabel = hourDate.toLocaleTimeString([], { hour: 'numeric' });
-    const hTempF = Math.round(((hourly.temperature_2m?.[i] || 20) * 9) / 5 + 32);
+    const hTempF = Math.round(((hourly.temperature_2m?.[i] ?? 20) * 9) / 5 + 32);
     const hWind = Math.round((hourly.wind_speed_10m?.[i] || 10) * 0.621371);
     const hPressure = Math.round(hourlyPressure?.[i] || 1013);
     const hPrecip = Math.round(hourly.precipitation_probability?.[i] || 0);
@@ -370,18 +446,22 @@ function generateTideSchedule(isCoastal: boolean): TideData {
 
 function generateSimulatedWeatherData(
   location: LocationInfo,
-  solunar: SolunarData
+  solunar: SolunarData,
+  targetDate: Date = new Date(),
 ): {
   current: CurrentWeather;
   hourly: HourlyForecastItem[];
   tides: TideData;
 } {
   const now = new Date();
-  const sunTimes = SunCalc.getTimes(now, location.lat, location.lon);
-  const temp = seasonalNormalTempF(now);
+  const isToday = localDateKey(targetDate, location.timeZone) === localDateKey(now, location.timeZone);
+  const sunTimes = SunCalc.getTimes(targetDate, location.lat, location.lon);
+  const temp = seasonalNormalTempF(targetDate);
 
   const current: CurrentWeather = {
-    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: isToday
+      ? now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '02:00 PM',
     temp,
     feelsLike: temp + 2,
     windSpeed: 8,
@@ -406,6 +486,8 @@ function generateSimulatedWeatherData(
     estimatedWaterTemp: estimateWaterTempF(temp),
     estimatedWaterClarity: 'Slightly Stained',
     isSimulated: true,
+    isForecast: !isToday,
+    dateKey: localDateKey(targetDate, location.timeZone),
   };
 
   const hourly: HourlyForecastItem[] = [];

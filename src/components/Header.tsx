@@ -20,6 +20,9 @@ interface HeaderProps {
   currentLocation?: LocationInfo;
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
+  /** Bounds of the date picker, relative to today, matching the forecast window. */
+  minOffsetDays?: number;
+  maxOffsetDays?: number;
   unitSystem: UnitSystem;
   onToggleUnits: () => void;
   activeTab: 'dashboard' | 'conditions' | 'fishtrap' | 'species' | 'catchlog' | 'ai' | 'android';
@@ -33,6 +36,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentLocation = FISHTRAP_LAKE_LOCATION,
   selectedDate,
   onSelectDate,
+  minOffsetDays = -3,
+  maxOffsetDays = 6,
   unitSystem,
   onToggleUnits,
   activeTab,
@@ -43,13 +48,27 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { isInstallable, isInstalled, triggerInstall } = usePWAInstall();
 
+  const startOfDay = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const offsetFromToday = Math.round(
+    (startOfDay(selectedDate).getTime() - startOfDay(new Date()).getTime()) / 86_400_000,
+  );
+  const canGoBack = offsetFromToday > minOffsetDays;
+  const canGoForward = offsetFromToday < maxOffsetDays;
+
   const handleDateChange = (daysOffset: number) => {
+    const nextOffset = offsetFromToday + daysOffset;
+    if (nextOffset < minOffsetDays || nextOffset > maxOffsetDays) return;
     const next = new Date(selectedDate);
     next.setDate(next.getDate() + daysOffset);
     onSelectDate(next);
   };
 
-  const isToday = new Date().toDateString() === selectedDate.toDateString();
+  const isToday = offsetFromToday === 0;
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-emerald-900/40 text-slate-100 shadow-lg">
@@ -94,7 +113,9 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="prev-date-btn"
               onClick={() => handleDateChange(-1)}
-              className="px-2 py-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white"
+              disabled={!canGoBack}
+              title={canGoBack ? 'Previous day' : 'No forecast data before this day'}
+              className="px-2 py-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
             >
               ◀
             </button>
@@ -107,14 +128,20 @@ export const Header: React.FC<HeaderProps> = ({
                   day: 'numeric',
                 })}
               </span>
-              {isToday && (
+              {isToday ? (
                 <span className="text-[10px] bg-emerald-500/30 text-emerald-300 px-1 rounded">Today</span>
+              ) : (
+                <span className="text-[10px] bg-sky-500/25 text-sky-300 px-1 rounded">
+                  {offsetFromToday > 0 ? `+${offsetFromToday}d forecast` : `${offsetFromToday}d past`}
+                </span>
               )}
             </div>
             <button
               id="next-date-btn"
               onClick={() => handleDateChange(1)}
-              className="px-2 py-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white"
+              disabled={!canGoForward}
+              title={canGoForward ? 'Next day' : 'Forecast does not reach further out'}
+              className="px-2 py-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
             >
               ▶
             </button>

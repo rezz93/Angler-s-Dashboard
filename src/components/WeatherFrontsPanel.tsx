@@ -19,6 +19,8 @@ interface WeatherFrontsPanelProps {
   isLoading: boolean;
   weather: CurrentWeather;
   onRefresh: () => void;
+  /** Day being viewed; the surface analysis is only valid for today. */
+  selectedDate?: Date;
 }
 
 /** Fishtrap Lake's approximate position inside the WPC national forecast image. */
@@ -53,7 +55,9 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
   isLoading,
   weather,
   onRefresh,
+  selectedDate = new Date(),
 }) => {
+  const isToday = new Date().toDateString() === selectedDate.toDateString();
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
 
@@ -196,10 +200,21 @@ export const WeatherFrontsPanel: React.FC<WeatherFrontsPanelProps> = ({
         </div>
       )}
 
+      {!isToday && (
+        <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-3 text-[11px] sm:text-xs text-sky-200 leading-snug">
+          You are viewing{' '}
+          {selectedDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}. The
+          surface analysis and map below are issued for the current day only — they do not describe that
+          date.
+        </div>
+      )}
+
       {/* Tactical read */}
       <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 text-[11px] sm:text-xs text-slate-300 leading-snug">
         <strong className="text-sky-300">Front Tactics: </strong>
-        {frontTactics(weather, fronts)}
+        {isToday
+          ? frontTactics(weather, fronts)
+          : 'Surface fronts are analysed for the current day only. For a future date, plan from the forecast barometer and wind trend on the hourly timeline instead.'}
       </div>
 
       {/* Collapsible small front map */}

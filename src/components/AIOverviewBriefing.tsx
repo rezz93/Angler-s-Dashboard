@@ -28,6 +28,7 @@ import {
   saveLocalChatHistory,
 } from '../utils/aiChatStore';
 import { requestAnglerAdvice } from '../utils/geminiAdvice';
+import { getSeasonContext } from '../utils/season';
 
 interface AIOverviewBriefingProps {
   location: LocationInfo;
@@ -36,6 +37,8 @@ interface AIOverviewBriefingProps {
   unitSystem: UnitSystem;
   hydrology?: LakeHydrologyData;
   onOpenFullAdvisor: () => void;
+  /** Day the briefing describes; defaults to today. */
+  selectedDate?: Date;
 }
 
 export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
@@ -45,7 +48,10 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
   unitSystem,
   hydrology = FISHTRAP_LAKE_HYDROLOGY,
   onOpenFullAdvisor,
+  selectedDate = new Date(),
 }) => {
+  const isToday = new Date().toDateString() === selectedDate.toDateString();
+  const seasonContext = getSeasonContext(selectedDate, hydrology.waterTempF);
   const [quickQuestion, setQuickQuestion] = useState('');
   const [qaHistory, setQaHistory] = useState<SyncedChatMessage[]>(() => getLocalChatHistory());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,6 +134,13 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
         solunarBestTimes: bestTimesCombined,
         weather: weather.weatherDescription,
         targetSpecies: 'Largemouth Bass, Smallmouth Bass, Crappie, Panfish, Catfish, Freshwater Stripers',
+        date: seasonContext.dateLabel,
+        season: `${seasonContext.label} — ${seasonContext.phase}`,
+        dataNotice: weather.isSimulated
+          ? 'The live weather API was unreachable; the weather values above are seasonal placeholders, not observations.'
+          : !isToday
+            ? `The angler is planning ahead: the weather values above are a forecast for ${seasonContext.dateLabel}, not current observations.`
+            : undefined,
       });
 
       if (error) {
@@ -214,6 +227,11 @@ export const AIOverviewBriefing: React.FC<AIOverviewBriefingProps> = ({
               <h2 className="text-lg sm:text-xl font-black text-slate-100 flex items-center gap-2">
                 AI Angler Tactical Briefing
               </h2>
+              {!isToday && (
+                <span className="text-[10px] uppercase font-black px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                  Forecast · {seasonContext.dateLabel}
+                </span>
+              )}
               <span className="text-[10px] uppercase font-black px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40">
                 Pikeville & Fishtrap
               </span>

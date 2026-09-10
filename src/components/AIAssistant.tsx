@@ -55,6 +55,8 @@ interface AIAssistantProps {
   hydrology?: LakeHydrologyData;
   fronts?: FrontsData;
   isLoadingFronts?: boolean;
+  /** Day the briefing describes; defaults to today. */
+  selectedDate?: Date;
 }
 
 export const AIAssistant: React.FC<AIAssistantProps> = ({
@@ -65,7 +67,10 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   hydrology = FISHTRAP_LAKE_HYDROLOGY,
   fronts,
   isLoadingFronts = false,
+  selectedDate = new Date(),
 }) => {
+  const isToday = new Date().toDateString() === selectedDate.toDateString();
+  const dayWord = isToday ? 'today' : 'that day';
   const waterTempDisplay = hydrology.waterTempF > 0
     ? `${hydrology.waterTempF.toFixed(1)}°F`
     : 'unavailable';
@@ -92,13 +97,14 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const bestTimesCombined = `${majorTimesSummary}; ${minorTimesSummary}`;
 
   // Weather Statement Builder
-  const seasonContext = getSeasonContext(new Date(), hydrology.waterTempF);
+  const seasonContext = getSeasonContext(selectedDate, hydrology.waterTempF);
   const frontContext = summarizeFronts(fronts);
 
-  // Only a boundary the WPC analysis actually places nearby earns front language.
-  const nearbyFrontMi = fronts?.status === 'ok' ? fronts.nearest?.distanceMi : undefined;
-  const frontClause =
-    nearbyFrontMi !== undefined && nearbyFrontMi <= 150
+  // The WPC surface analysis is a snapshot of now, so it says nothing about another day.
+  const nearbyFrontMi = fronts?.status === 'ok' && isToday ? fronts.nearest?.distanceMi : undefined;
+  const frontClause = !isToday
+    ? ' Surface frontal analysis is only issued for the current day, so this outlook leans on the forecast pressure and wind trend rather than an analysed boundary.'
+    : nearbyFrontMi !== undefined && nearbyFrontMi <= 150
       ? ` The nearest analysed boundary is a ${fronts?.nearest?.label.toLowerCase()} about ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText}, so treat this as front-influenced air.`
       : nearbyFrontMi !== undefined
       ? ` The nearest analysed boundary sits roughly ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} — far enough out that today's pressure change is air-mass driven rather than an imminent passage.`
@@ -114,11 +120,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const weatherStatement = `${
     weather.isSimulated
       ? `Live weather is unavailable right now, so the numbers below are seasonal placeholders, not observations. `
+      : weather.isForecast
+      ? `These are forecast values for ${seasonContext.dateLabel} (sampled early afternoon), not current observations. `
       : ''
   }Tactical Atmospheric Assessment for ${currentLocation.name} on ${seasonContext.dateLabel} (${seasonContext.label}): ${weather.weatherDescription} with ambient air temperature at ${weather.temp}°F (feels like ${weather.feelsLike}°F) and ${weather.humidity}% humidity. Wind is from the ${weather.windDirectionText} at ${weather.windSpeed} mph. Sea-level barometric pressure registers ${weather.pressureInHg.toFixed(2)} inHg (${weather.pressureTrend.replace('_', ' ')}, ${weather.pressureDelta6h} hPa over 6 h). Seasonal pattern: ${seasonContext.phase}. ${pressureAdvice}${frontClause}`;
 
   // Solunar Statement Builder
-  const solunarStatement = `Today's Solunar Bite Rating is rated ${solunar.ratingScore}/100 (${solunar.overallQuality} Activity) under a ${solunar.moonPhaseName} (${solunar.moonIllumination}% illumination). Prime feeding windows for today are concentrated during Major Periods: ${
+  const solunarStatement = `${isToday ? "Today's" : `The ${seasonContext.dateLabel}`} Solunar Bite Rating is rated ${solunar.ratingScore}/100 (${solunar.overallQuality} Activity) under a ${solunar.moonPhaseName} (${solunar.moonIllumination}% illumination). Prime feeding windows for ${dayWord} are concentrated during Major Periods: ${
     solunar.majorPeriods[0] ? `${solunar.majorPeriods[0].start} to ${solunar.majorPeriods[0].end} (Peak at ${solunar.majorPeriods[0].peak})` : 'Morning Major'
   } and ${
     solunar.majorPeriods[1] ? `${solunar.majorPeriods[1].start} to ${solunar.majorPeriods[1].end} (Peak at ${solunar.majorPeriods[1].peak})` : 'Evening Major'
@@ -206,6 +214,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         season: `${seasonContext.label} — ${seasonContext.phase}`,
         dataNotice: weather.isSimulated
           ? 'The live weather API was unreachable; the weather values above are seasonal placeholders. Say so rather than presenting them as observations.'
+          : weather.isForecast
+          ? `The angler is planning ahead: every value above is a forecast for ${seasonContext.dateLabel}, not a current observation, and the frontal analysis describes today only. Advise for that future day and do not imply live conditions.`
           : undefined,
       });
 
@@ -478,6 +488,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
               weather={weather}
               isLoadingFronts={isLoadingFronts}
               waterTempF={hydrology.waterTempF}
+              selectedDate={selectedDate}
             />
           </div>
 

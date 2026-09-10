@@ -38,6 +38,10 @@ export interface CurrentWeather {
   estimatedWaterClarity: 'Crystal Clear' | 'Slightly Stained' | 'Murky' | 'Muddy';
   /** True when the live weather API was unreachable and these values are modelled. */
   isSimulated?: boolean;
+  /** True when these values come from a forecast for another day, not from observations. */
+  isForecast?: boolean;
+  /** Lake-local calendar day (YYYY-MM-DD) these values describe. */
+  dateKey?: string;
 }
 
 export interface HourlyForecastItem {
