@@ -104,11 +104,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const nearbyFrontMi = fronts?.status === 'ok' && isToday ? fronts.nearest?.distanceMi : undefined;
   const frontClause = !isToday
     ? ' Surface frontal analysis is only issued for the current day, so this outlook leans on the forecast pressure and wind trend rather than an analysed boundary.'
-    : nearbyFrontMi !== undefined && nearbyFrontMi <= 150
-      ? ` The nearest analysed boundary is a ${fronts?.nearest?.label.toLowerCase()} about ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText}, so treat this as front-influenced air.`
-      : nearbyFrontMi !== undefined
-      ? ` The nearest analysed boundary sits roughly ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} — far enough out that today's pressure change is air-mass driven rather than an imminent passage.`
-      : '';
+    : nearbyFrontMi === undefined
+      ? ''
+      : fronts?.nearest?.motion === 'departing'
+        ? ` A ${fronts?.nearest?.label.toLowerCase()} has already cleared ${nearbyFrontMi} mi to the ${fronts?.nearest?.bearingText}, so this is post-frontal air rather than an inbound boundary.`
+        : nearbyFrontMi <= 150
+          ? ` A ${fronts?.nearest?.label.toLowerCase()} is about ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} and tracking this way, so treat this as front-influenced air.`
+          : ` The nearest inbound boundary is still roughly ${nearbyFrontMi} mi ${fronts?.nearest?.bearingText} — far enough out that today's pressure change is air-mass driven rather than an imminent passage.`;
 
   const pressureAdvice =
     weather.pressureTrend === 'falling' || weather.pressureTrend === 'falling_fast'
